@@ -1,14 +1,29 @@
-import pandas as pd
-import imblearn
-import lightgbm as lgb
-data = pd.read_csv("test_data.csv")
-#print(data.head())
+from flask import Flask, request, jsonify
+import pickle
+import numpy as np
 
-import joblib
+app = Flask(__name__)
 
-model = joblib.load('best_model_parameters.pkl')
+# Load the logistic regression model
+with open('logistic_regression_model.pkl', 'rb') as model_file:
+    model = pickle.load(model_file)
 
+# Define a route for prediction
+@app.route('/predict', methods=['POST'])
+def predict():
+    # Get data from request
+    data = request.json
+    
+    # Preprocess data if needed
+    # Example: Convert data to numpy array
+    features = np.array(data['features'])
+    print(features)
+    
+    # Make prediction
+    prediction = model.predict(features.reshape(1, -1))
+    
+    # Return prediction
+    return jsonify({'prediction': prediction.tolist()})
 
-y_predict = model.predict(data)
-
-print(y_predict)
+if __name__ == '__main__':
+    app.run(debug=True)
