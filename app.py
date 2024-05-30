@@ -16,7 +16,7 @@ app = Flask(__name__)
 #with open('/home/aoutanine/Project_7_OpenclassRoom/best_model_parameters.pkl', 'rb') as model_file:
     #model = pickle.load(model_file)
 
-model = joblib.load('/home/aoutanine/Project_7_OpenclassRoom/best_model_parameters.pkl')
+model = joblib.load('best_model_parameters.pkl')
 
 
 # Define a route for prediction
