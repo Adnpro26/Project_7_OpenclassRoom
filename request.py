@@ -4,7 +4,7 @@ import pandas as pd
 import json
 
 # Define the URL of the Flask API
-API_URL = 'http://localhost:5000/predict'
+API_URL = 'https://projectdeplapi-785f3fb8a900.herokuapp.com//predict'
 
 X_test=pd.read_csv("/home/aoutanine/Project_7_OpenclassRoom/test_data.csv") 
 Customer = X_test.iloc[[4]]
