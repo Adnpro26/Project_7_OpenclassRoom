@@ -14,8 +14,16 @@ import joblib
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from PIL import Image
 import os
+from PIL import Image
+
+# Obtenir le chemin absolu du dossier contenant le script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Construire le chemin absolu pour le fichier image
+image_path = os.path.join(script_dir, 'logo_image.jpg')
+data_A_path = os.path.join(script_dir, 'data_test_Costumers.csv')
+data_B_path = os.path.join(script_dir, 'Customers_Base.csv')
 
 # Titre de l'application
 st.title("Analyse risque de crédit")
@@ -27,7 +35,7 @@ st.write("Bienvenue sur le simulateur du risque crédit")
 
 #logo_image.jpg
 # Méthode 3: Redimensionner l'image avec PIL avant d'afficher
-image = Image.open('../logo_image.jpg')
+image = Image.open(image_path)
 image = image.resize((100, 60))  # Ajuster la taille souhaitée
 st.sidebar.image(image)
 st.sidebar.title("Credit Simulator")
@@ -105,14 +113,14 @@ def afficher_importance_features(feature_importance_locale, feature_importance_g
 
 
 # Charger le fichier CSV
-customer_info = pd.read_csv("../data_test_Costumers.csv") 
+customer_info = pd.read_csv(data_A_path) 
 customer_info = customer_info.set_index("SK_ID_CURR")
 
 customer_info = customer_info.drop(columns=['Replacement_Occupation'])
 
 
 
-customer_base = pd.read_csv("../Customers_Base.csv") 
+customer_base = pd.read_csv(data_B_path) 
 customer_base = customer_base.set_index("SK_ID_CURR")
 index_clients = customer_base.index
 
