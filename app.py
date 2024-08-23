@@ -52,9 +52,10 @@ def predict():
     # Make prediction
     #prediction = model.predict(features.reshape(1, -1))
     prediction = model.predict(df_customers)
-    
-    #Return prediction
-    return jsonify({'prediction': prediction.tolist()})
+    predicted_proba = model.predict_proba(df_customers)
+    return jsonify({
+        'prediction': predicted_proba.tolist()
+        })
     #return jsonify({'prediction': features})
 
     #return features

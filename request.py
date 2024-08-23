@@ -7,7 +7,7 @@ import json
 API_URL = 'https://projectdeplapi-785f3fb8a900.herokuapp.com//predict'
 
 X_test=pd.read_csv("/home/aoutanine/Project_7_OpenclassRoom/test_data.csv") 
-Customer = X_test.iloc[[4]]
+Customer = X_test.iloc[[1000]]
 Customer = Customer.to_json()
 #Customer = Customer.tolist()
 # Sample data for prediction
@@ -24,6 +24,8 @@ response = requests.post(API_URL, json=data)
 if response.status_code == 200:
     # Get the prediction from the response
     prediction = response.json()['prediction']
-    print('Prediction:', prediction)
+    #prediction_proba = response.json()['proba']
+    print('Prediction:', prediction[0])
+    #print('Prediction_proba:', prediction_proba)
 else:
     print('Error:', response.text)
