@@ -9,6 +9,8 @@ import json
 import pickle
 import joblib
 
+import os
+
 
 # Obtenir le chemin absolu du dossier contenant le script
 script_dir = os.path.dirname(os.path.abspath(__file__))
