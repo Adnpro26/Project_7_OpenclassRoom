@@ -24,9 +24,16 @@ st.write("Bienvenue sur le simulateur du risque crédit")
 
 # Obtenir le chemin absolu du dossier contenant le script
 script_dir = os.path.dirname(os.path.abspath(__file__))
-data_B_path = os.path.join(script_dir, 'Customers_Base.csv')
-
+#data_B_path = os.path.join(script_dir, 'Customers_Base.csv')
+data_B_path = os.path.join(script_dir, 'data_test_features.csv')
+#data_test_features.csv
 customer_base = pd.read_csv(data_B_path) 
+
+#print(len(customer_base))
+#client_id = 307844
+#customer_base = customer_base[customer_base["SK_ID_CURR"]==client_id]
+
+
 customer_base = customer_base.set_index("SK_ID_CURR")
 index_clients = customer_base.index
 
