@@ -24,6 +24,8 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 image_path = os.path.join(script_dir, 'logo_image.jpg')
 data_A_path = os.path.join(script_dir, 'data_test_Costumers.csv')
 data_B_path = os.path.join(script_dir, 'Customers_Base.csv')
+#data_B_path = os.path.join(script_dir, 'data_test_features.csv')
+
 
 # Titre de l'application
 st.title("Analyse risque de crédit")
@@ -41,9 +43,49 @@ st.sidebar.image(image)
 st.sidebar.title("Credit Simulator")
 st.sidebar.header("Paramètres")
 Id_Value = st.sidebar.text_input("Entrez votre identifiant")
-st.sidebar.selectbox("Sélectionner type export", ["PDF", "HTML", "e-MAIL"])
+
+# Fonction pour exporter en PDF (dummy function ici)
+def export_as_pdf():
+    st.success("Le rapport a été exporté en PDF.")
+    # Ici vous pouvez ajouter le code pour générer et télécharger un fichier PDF
+
+def export_as_HTML():
+    st.success("Le rapport a été exporté en HTML.")
+    # Ici vous pouvez ajouter le code pour générer et télécharger un fichier PDF
+
+# Fonction pour envoyer le rapport par mail (dummy function ici)
+def send_report_by_email(email):
+    st.success(f"Le rapport a été envoyé à {email}.")
+    # Ici vous pouvez ajouter le code pour envoyer un email avec le rapport en pièce jointe
 
 
+option = st.sidebar.selectbox("Sélectionner type export", ["PDF", "HTML", "e-MAIL"])
+
+if option == "e-MAIL":
+    # Création du formulaire dans la barre latérale
+    with st.sidebar.form(key='email_form'):
+        email = st.text_input("Entrez votre adresse e-mail :")
+        submit_button = st.form_submit_button(label='Envoyer')
+
+    # Action lors de la soumission du formulaire
+    if submit_button:
+        if email:
+            send_report_by_email(email)
+        else:
+            st.sidebar.error("Veuillez entrer une adresse e-mail valide.")
+
+# Si l'utilisateur choisit "Exporter en PDF"
+elif option == "PDF":
+    with st.sidebar.form(key='email_form'):        
+        submit_button = st.form_submit_button(label='Exporter')
+    if submit_button:
+        export_as_pdf()
+
+elif option == "HTML":
+    with st.sidebar.form(key='html_form'):        
+        submit_button = st.form_submit_button(label='Exporter')
+    if submit_button:
+        export_as_HTML()
 
 # Afficher les informations saisies
 st.write(f"Identifiant : {Id_Value}")
@@ -151,10 +193,43 @@ def highlight_max(s):
 
 #Customer = Customer.to_frame()
 
+# Construire le chemin absolu pour le fichier image
+file_path = os.path.join(script_dir, 'shap_values.pkl')
+
+
+with open(file_path, 'rb') as file:
+    shap_values = pickle.load(file)
+
+
 Customer_np = Customer.values.reshape(1, -1)  # Reshape to (1, 120) for prediction
 
+file_index = os.path.join(script_dir, 'test_data_index.pkl')
 
-loaded_model = joblib.load('best_model_parameters.pkl')
+
+with open(file_index, 'rb') as file:
+    index_values = pickle.load(file)
+
+
+index_ligne = index_values[index_values == client_id].index
+
+expected_value = -0.31125192035533533
+#shap.initjs()
+force_plot = shap.force_plot(expected_value, shap_values[index_ligne], Customer)
+
+# Obtenir le chemin absolu du dossier contenant le script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Construire le chemin absolu pour le fichier image
+html_path = os.path.join(script_dir, 'force_plot.html')
+# Sauvegarder le graphique SHAP sous forme d'image HTML
+shap.save_html(html_path, force_plot)
+
+# Afficher le graphique interactif dans Streamlit
+with open(html_path, "r") as f:
+    html_code = f.read()
+
+model_path = os.path.join(script_dir, 'best_model_parameters.pkl')
+loaded_model = joblib.load(model_path)
 
 #print(type(loaded_model))
 
@@ -382,7 +457,18 @@ with st.expander("Données du client"):
     # Afficher le graphique avec Streamlit
     st.subheader(f"Analyse contrats de type : '{contract_type}'")
     st.pyplot(plt)
-
+    
+    fig, ax = plt.subplots()
+    
+    shap.summary_plot(shap_values, customer_base, plot_type="bar")
+    
+    st.pyplot(fig)
+    
+    with open(html_path, "r") as f:
+        html_code = f.read()
+    
+    # Afficher le graphique HTML dans Streamlit (dynamique)
+    st.components.v1.html(html_code, height=400)  
 
 with st.form(key='my_form'):
     # Ajouter une sélection de choix
@@ -400,3 +486,7 @@ with st.form(key='my_form'):
             st.write("Avis favorable")
         else:
             st.write("Avis défavorable")
+        st.write("Avis favorable")
+
+
+

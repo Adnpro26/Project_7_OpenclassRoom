@@ -1,11 +1,48 @@
-import os
-from PIL import Image
+import pandas as pd
+import numpy as np
 
-# Obtenir le chemin absolu du dossier contenant le script
-script_dir = os.path.dirname(os.path.abspath(__file__))
-
-# Construire le chemin absolu pour le fichier image
-image_path = os.path.join(script_dir, 'logo_image.jpg')
+import pickle
+import joblib
 
 
-print(f"L'image est chargée depuis : {image_path}")
+# Charger le fichier CSV
+
+
+customer_base = pd.read_csv("/home/aoutanine/Project_7_OpenclassRoom/data_test_features.csv") 
+liste_columns = customer_base.columns
+
+
+# Nombre d'échantillons aléatoires à extraire
+n = 5000  # Par exemple, 5 clients aléatoires
+
+# Extraire des échantillons aléatoires
+#customer_base = test_data.sample(n=n, random_state=1)
+
+
+customer_base = customer_base.set_index("SK_ID_CURR")
+
+# Afficher les échantillons aléatoires
+#customer_base.to_csv("/home/aoutanine/Project_7_OpenclassRoom/Customers_Base.csv", index=True)
+
+client_id = 307844
+
+print(type(client_id))
+
+Customer = customer_base.loc[client_id]
+Customer = Customer.to_frame()
+print(type(customer_base))
+
+Customer_np = Customer.values.reshape(1, -1)  # Reshape to (1, 120) for prediction
+
+loaded_model = joblib.load('best_model_parameters.pkl')
+
+#print(type(loaded_model))
+
+# Faire des prédictions avec le modèle chargé
+predicted_class = loaded_model.predict(Customer_np)
+predicted_proba = loaded_model.predict_proba(Customer_np)
+
+# Afficher les résultats
+print(f"Prédiction pour le client : {predicted_class[0]}")
+#class_pred = predicted_class[0]
+print(f"Probabilités pour le client : {predicted_proba[0][predicted_class]}")

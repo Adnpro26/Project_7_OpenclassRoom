@@ -8,6 +8,7 @@ API_URL = 'https://projectdeplapi-785f3fb8a900.herokuapp.com//predict'
 
 X_test=pd.read_csv("/home/aoutanine/Project_7_OpenclassRoom/test_data.csv") 
 Customer = X_test.iloc[[1000]]
+print(type(Customer))
 Customer = Customer.to_json()
 #Customer = Customer.tolist()
 # Sample data for prediction

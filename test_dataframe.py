@@ -1,91 +1,81 @@
 import streamlit as st
+import matplotlib.pyplot as plt
 
 import pandas as pd
 import numpy as np
 import requests
 
 import json
-import plotly.graph_objects as go
-import shap
 
 import pickle
 import joblib
 
-import seaborn as sns
-import matplotlib.pyplot as plt
+import os
 
-# Titre de l'application
-st.title("Analyse risque de crédit")
+import shap
 
-# Texte d'introduction
-st.write("Bienvenue sur le simulateur du risque crédit")
+# Obtenir le chemin absolu du dossier contenant le script
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Créer des éléments interactifs
-Id_Value = st.text_input("Entrez votre identifiant")
-
-
-# Afficher les informations saisies
-st.write(f"Identifiant : {Id_Value}")
-
-
-
-# Fonction pour afficher une jauge colorée
-def afficher_jauge(score):
-    fig = go.Figure(go.Indicator(
-        mode = "gauge+number",
-        value = score,
-        title = {'text': "Score de crédit"},
-        gauge = {
-            'axis': {'range': [0, 100]},
-            'bar': {'color': "darkblue"},
-            'steps': [
-                {'range': [0, 40], 'color': "red"},
-                {'range': [40, 70], 'color': "yellow"},
-                {'range': [70, 100], 'color': "green"}
-            ],
-        }
-    ))
-    st.plotly_chart(fig)
-
-# Fonction pour afficher l'importance des features
-def afficher_importance_features(feature_importance_locale, feature_importance_globale):
-    st.subheader("Importance des features (locale)")
-    st.bar_chart(feature_importance_locale)
-    
-    st.subheader("Importance des features (globale)")
-    st.bar_chart(feature_importance_globale)
-
-
-# Charger le fichier CSV
-customer_base = pd.read_csv("/home/aoutanine/Project_7_OpenclassRoom/Customers_Base.csv") 
+data_B_path = os.path.join(script_dir, 'data_test_features.csv')
+#data_test_features.csv
+customer_base = pd.read_csv(data_B_path) 
 customer_base = customer_base.set_index("SK_ID_CURR")
-index_clients = customer_base.index
 
-client_id = st.selectbox("ID du client", index_clients)
-#client_id = int(client_id)
+# Construire le chemin absolu pour le fichier image
+file_path = os.path.join(script_dir, 'shap_values.pkl')
+
+
+with open(file_path, 'rb') as file:
+    shap_values = pickle.load(file)
+
+
+#explainer_values.pkl
+
+file_explain = os.path.join(script_dir, 'explainer_values.pkl')
+
+
+with open(file_path, 'rb') as file:
+    file_explain = pickle.load(file)
+# Construire le chemin absolu pour le fichier image
+file_index = os.path.join(script_dir, 'test_data_index.pkl')
+
+
+with open(file_index, 'rb') as file:
+    index_values = pickle.load(file)
+
+print(type(index_values))
+client_id = 307844
+
 print(type(client_id))
 
+#Client_index = index_values.loc[client_id]
 
-#client_id = 333371
+index_ligne = index_values[index_values == client_id].index
 
-print(type(client_id))
+print(index_ligne)
+print(type(file_explain))
 
-Customer = customer_base.loc[client_id]
-Customer = Customer.to_frame()
+tableau_filtre = file_explain[index_ligne]
 
-print(type(Customer))
-Customer = Customer.values.reshape(1, -1)  # Reshape to (1, 120) for prediction
+print(tableau_filtre)
 
-loaded_model = joblib.load('best_model_parameters.pkl')
+expected_value = -0.31125192035533533
 
-#print(type(loaded_model))
+#shap.initjs()
+force_plot = shap.force_plot(expected_value, shap_values[index_ligne], customer_base.loc[[client_id]])
 
-# Faire des prédictions avec le modèle chargé
-predicted_class = loaded_model.predict(Customer)
-predicted_proba = loaded_model.predict_proba(Customer)
+# Obtenir le chemin absolu du dossier contenant le script
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Afficher les résultats
-print(f"Prédiction pour le client : {predicted_class[0]}")
-#class_pred = predicted_class[0]
-print(f"Probabilités pour le client : {predicted_proba[0][predicted_class]}")
+# Construire le chemin absolu pour le fichier image
+html_path = os.path.join(script_dir, 'force_plot.html')
+# Sauvegarder le graphique SHAP sous forme d'image HTML
+shap.save_html(html_path, force_plot)
 
+# Afficher le graphique interactif dans Streamlit
+with open(html_path, "r") as f:
+    html_code = f.read()
+
+# Afficher le graphique HTML dans Streamlit (dynamique)
+st.components.v1.html(html_code, height=400)

@@ -23,7 +23,7 @@ customer_base = customer_base.set_index("SK_ID_CURR")
 # Afficher les échantillons aléatoires
 customer_base.to_csv("/home/aoutanine/Project_7_OpenclassRoom/Customers_Base.csv", index=True)
 
-client_id = 333371
+client_id = 307844
 
 print(type(client_id))
 
