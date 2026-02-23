@@ -125,3 +125,37 @@ for row in range(START_ROW, END_ROW + 1):
 # ===================================================
 wb.save("reporting_generated.xlsx")
 print("✅ Reporting généré avec succès : reporting_generated.xlsx")
+
+
+def compute_raw_indicator_df(df, indicator_name, cfg):
+    mask = pd.Series(True, index=df.index)
+
+    for col, value in cfg["filters"].items():
+        mask &= df[col] == value
+
+    filtered = df.loc[mask]
+
+    if filtered.empty:
+        return None
+
+    return (
+        filtered
+        .groupby(["periode", "pays"], as_index=False)["valeur"]
+        .sum()
+        .assign(
+            indicateur=indicator_name,
+            activite=cfg["filters"]["activite"],
+            source="computed"
+        )
+    )
+
+
+cfg = yaml_cfg["indicators"]["ISR_Protection_Brut"]
+
+df_isr_protection = compute_raw_indicator_df(
+    df,
+    "ISR_Protection_Brut",
+    cfg
+)
+
+df = pd.concat([df, df_isr_protection], ignore_index=True)
