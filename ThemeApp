@@ -1,0 +1,100 @@
+{
+  "CTk": {
+    "fg_color": "#F3F3F3"
+  },
+
+  "CTkFrame": {
+    "corner_radius": 4,
+    "border_width": 1,
+    "fg_color": "#FFFFFF",
+    "border_color": "#D4D4D4"
+  },
+
+  "CTkLabel": {
+    "corner_radius": 0,
+    "fg_color": "transparent",
+    "text_color": "#000000"
+  },
+
+  "CTkButton": {
+    "corner_radius": 4,
+    "border_width": 1,
+    "fg_color": "#217346",
+    "hover_color": "#1E6A40",
+    "border_color": "#1E6A40",
+    "text_color": "#FFFFFF",
+    "text_color_disabled": "#A6A6A6"
+  },
+
+  "CTkEntry": {
+    "corner_radius": 4,
+    "border_width": 1,
+    "fg_color": "#FFFFFF",
+    "border_color": "#A6A6A6",
+    "text_color": "#000000",
+    "placeholder_text_color": "#7A7A7A"
+  },
+
+  "CTkComboBox": {
+    "corner_radius": 4,
+    "border_width": 1,
+    "fg_color": "#FFFFFF",
+    "border_color": "#A6A6A6",
+    "button_color": "#E6E6E6",
+    "button_hover_color": "#DADADA",
+    "text_color": "#000000"
+  },
+
+  "CTkProgressBar": {
+    "corner_radius": 1000,
+    "border_width": 0,
+    "fg_color": "#E6E6E6",
+    "progress_color": "#217346"
+  },
+
+  "CTkScrollbar": {
+    "corner_radius": 1000,
+    "border_spacing": 4,
+    "fg_color": "transparent",
+    "button_color": "#C8C8C8",
+    "button_hover_color": "#AFAFAF"
+  },
+
+  "CTkFont": {
+    "Windows": {
+      "family": "Segoe UI",
+      "size": 12,
+      "weight": "normal"
+    },
+    "macOS": {
+      "family": "SF Pro Text",
+      "size": 12,
+      "weight": "normal"
+    },
+    "Linux": {
+      "family": "Roboto",
+      "size": 12,
+      "weight": "normal"
+    }
+  }
+}
+
+
+import customtkinter as ctk
+
+ctk.set_appearance_mode("light")  # Excel = light only
+ctk.set_default_color_theme("theme_excel_2025.json")
+
+root = ctk.CTk()
+root.title("Reporting Excel-like")
+root.geometry("900x600")
+
+ctk.CTkLabel(root, text="Reporting Finance").pack(pady=10)
+ctk.CTkEntry(root, placeholder_text="Période").pack(pady=5)
+ctk.CTkButton(root, text="Générer le reporting").pack(pady=20)
+
+root.mainloop()
+
+
+
+label.configure(font=("Segoe UI", 13))
