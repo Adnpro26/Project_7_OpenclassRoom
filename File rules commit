@@ -1,0 +1,76 @@
+import tkinter as tk
+from tkinter import ttk, filedialog
+
+
+def build_data_env(self):
+
+    # Liste des fichiers sélectionnés
+    self.sources = []
+
+    # Titre
+    ttk.Label(
+        self.data_frame,
+        text="Data Environnement",
+        font=("Arial", 16, "bold")
+    ).grid(row=0, column=0, sticky="w", pady=10)
+
+    # Frame dynamique des sources
+    self.sources_frame = ttk.Frame(self.data_frame)
+    self.sources_frame.grid(row=1, column=0, columnspan=5, sticky="nsew")
+
+    # Bouton ajouter
+    ttk.Button(
+        self.data_frame,
+        text="+ Ajouter une source",
+        command=self.add_source_row
+    ).grid(row=2, column=0, sticky="w", pady=5)
+
+    # Bouton construire base
+    ttk.Button(
+        self.data_frame,
+        text="Construire Base",
+        command=self.build_database
+    ).grid(row=2, column=4, sticky="e", pady=5)
+
+    # Dashboard
+    self.dashboard_frame = ttk.LabelFrame(
+        self.data_frame,
+        text="Dashboard",
+        padding=10
+    )
+    self.dashboard_frame.grid(row=3, column=0, columnspan=5, sticky="nsew", pady=10)
+
+    self.data_frame.rowconfigure(3, weight=1)
+    self.data_frame.columnconfigure(0, weight=1)
+
+
+
+def add_source_row(self):
+
+    row_frame = ttk.Frame(self.sources_frame)
+    row_frame.pack(fill="x", pady=2)
+
+    path_var = tk.StringVar()
+
+    entry = ttk.Entry(row_frame, textvariable=path_var, width=70)
+    entry.pack(side="left", fill="x", expand=True, padx=5)
+
+    def browse():
+        file = filedialog.askopenfilename(
+            title="Sélectionner une source",
+            filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")]
+        )
+        if file:
+            path_var.set(file)
+            if file not in self.sources:
+                self.sources.append(file)
+
+    ttk.Button(row_frame, text="Parcourir", command=browse).pack(side="left", padx=5)
+
+    def remove():
+        file = path_var.get()
+        if file in self.sources:
+            self.sources.remove(file)
+        row_frame.destroy()
+
+    ttk.Button(row_frame, text="Supprimer", command=remove).pack(side="left", padx=5)
