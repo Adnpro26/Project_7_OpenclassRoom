@@ -1,0 +1,259 @@
+
+1. Documentation d’architecture (niveau entreprise)
+1.1 Contexte
+L’application est un outil de préparation et transformation de données permettant :
+d’extraire des données brutes depuis plusieurs sources
+de stocker ces données sous un format consultable
+d’effectuer un retraitement automatisé
+de produire des datasets optimisés pour alimenter des reportings
+L’application est distribuée sous forme d’un exécutable utilisateur.
+Technologie principale :
+Python
+1.2 Objectifs du système
+Le système doit permettre :
+Accessibilité des données
+mise à disposition des données brutes
+consultation possible par les utilisateurs
+Performance
+optimisation des traitements volumineux
+réduction des temps de calcul
+Traçabilité
+gestion des versions de données
+historisation des datasets
+Simplicité d’usage
+interface utilisateur simple
+automatisation du pipeline de traitement
+1.3 Principes d’architecture
+L’architecture repose sur plusieurs principes :
+Séparation des couches
+Données brutes
+Données transformées
+Données analytiques
+Pipeline de transformation
+Les données suivent une chaîne de traitement :
+Copier le code
+
+Extraction
+→ Stockage brut
+→ Transformation
+→ Agrégation
+→ Reporting
+1.4 Technologies principales
+Manipulation de données :
+pandas
+Stockage optimisé :
+Apache Parquet
+Interface utilisateur :
+ttkbootstrap
+Distribution de l’application :
+PyInstaller
+1.5 Flux de données
+Étape 1 — Extraction
+Les données sont extraites depuis plusieurs sources et consolidées dans un fichier :
+Copier le code
+
+CSV brut
+Chaque extraction est accompagnée d’un fichier métadonnées (.txt) contenant :
+clé de hachage
+date de création
+informations d’identification du dataset
+Étape 2 — Stockage des données brutes
+Les données sont stockées afin de permettre :
+consultation
+archivage
+traçabilité
+Format :
+Copier le code
+
+CSV
+Ce niveau représente la source historique des données.
+Étape 3 — Chargement dans l’application
+Lorsqu’un utilisateur souhaite lancer un reporting :
+sélection du fichier CSV
+vérification du hash
+comparaison avec la dernière version traitée
+Deux cas :
+Copier le code
+
+Nouvelle version → retraitement
+Version existante → utilisation parquet existant
+Étape 4 — Transformation
+Les transformations comprennent :
+nettoyage
+enrichissement
+normalisation
+calcul d’indicateurs
+Les données sont manipulées via :
+DataFrame pandas
+Étape 5 — Conversion Parquet
+Les données transformées sont converties en :
+Copier le code
+
+Parquet
+Avantages :
+compression
+lecture rapide
+traitement optimisé
+Technologie :
+Apache Parquet
+Étape 6 — Agrégation et reporting
+À partir du dataset Parquet :
+calcul des indicateurs
+création des datasets analytiques
+export vers Excel
+Format final :
+Copier le code
+
+Excel
+2. Schéma d’architecture
+Voici le flux global du système :
+Copier le code
+
+Sources de données
+        │
+        ▼
+Extraction
+        │
+        ▼
+CSV brut + métadonnées
+        │
+        ▼
+Stockage historique
+        │
+        ▼
+Application utilisateur
+        │
+        ▼
+Vérification version
+        │
+        ├── Données déjà traitées
+        │       │
+        │       ▼
+        │   Lecture Parquet
+        │
+        └── Nouvelle version
+                │
+                ▼
+        Transformation (pandas)
+                │
+                ▼
+        Conversion Parquet
+                │
+                ▼
+        Agrégation
+                │
+                ▼
+        Export Excel / Reporting
+3. Structure de projet Python optimale
+Voici une structure professionnelle et maintenable :
+Copier le code
+
+data_app/
+│
+├── main.py
+│
+├── config/
+│   └── settings.py
+│
+├── ui/
+│   ├── main_window.py
+│   └── progress_bar.py
+│
+├── pipeline/
+│   ├── extractor.py
+│   ├── transformer.py
+│   ├── aggregator.py
+│   └── pipeline_manager.py
+│
+├── storage/
+│   ├── csv_manager.py
+│   ├── parquet_manager.py
+│   └── version_manager.py
+│
+├── metadata/
+│   └── hash_manager.py
+│
+├── export/
+│   └── excel_exporter.py
+│
+├── utils/
+│   └── logger.py
+│
+└── data/
+    ├── raw
+    ├── parquet
+    └── archive
+4. Dossier de conception complet
+4.1 Conception fonctionnelle
+Acteur principal
+Utilisateur métier.
+Cas d’usage principaux
+Charger un dataset
+Utilisateur :
+Copier le code
+
+Importer CSV
+Système :
+Copier le code
+
+Validation du fichier
+Lancer un traitement
+Utilisateur :
+Copier le code
+
+Lancer reporting
+Système :
+Copier le code
+
+Vérifie version
+→ transforme données
+→ génère reporting
+Consulter des données
+Utilisateur :
+Copier le code
+
+Accéder aux données brutes
+Système :
+Copier le code
+
+Met à disposition les CSV
+4.2 Conception technique
+Modules principaux
+Extraction
+Responsable de :
+charger les fichiers CSV
+valider leur structure
+Transformation
+Responsable de :
+nettoyage
+enrichissement
+calcul de colonnes
+Stockage
+Responsable de :
+gestion CSV
+gestion Parquet
+gestion des versions
+Reporting
+Responsable de :
+agrégation
+export Excel
+4.3 Gestion des performances
+Pour gérer les volumes importants :
+utilisation de pandas
+stockage optimisé en Apache Parquet
+traitement par batch possible
+4.4 Gestion des versions
+Chaque dataset possède :
+Copier le code
+
+hash
+date de création
+version
+Le système peut :
+détecter une nouvelle version
+archiver les anciennes
+réutiliser les datasets existants
+4.5 Distribution
+L’application est distribuée sous forme d’exécutable via :
+PyInstaller
+Cela permet aux utilisateurs d’exécuter l’application sans installer Python.
