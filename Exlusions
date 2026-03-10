@@ -1,0 +1,18 @@
+pyinstaller app.py --onedir \
+    --exclude-module PIL.BdfFontFile \
+    --exclude-module PIL.FpxImagePlugin \
+    --exclude-module PIL.GbrImagePlugin \
+    --exclude-module PIL.PcxImagePlugin \
+    --exclude-module PIL.PsdImagePlugin \
+    --exclude-module PIL.PdfImagePlugin
+
+
+pyinstaller app.py --onedir \
+    --exclude-module numpy.linalg \
+    --exclude-module numpy.fft \
+    --exclude-module numpy.random \
+    --exclude-module numpy.polynomial \
+    --exclude-module numpy.distutils \
+    --exclude-module numpy.testing \
+    --exclude-module numpy.ma \
+    --exclude-module numpy.core._multiarray_umath_tests
