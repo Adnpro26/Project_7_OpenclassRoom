@@ -1,0 +1,17 @@
+Get-ChildItem -Recurse dist\app | 
+Sort-Object Length -Descending | 
+Select-Object -First 20
+
+pyinstaller app.py --onedir --debug=imports
+
+
+import os
+
+dist_path = r"C:\Users\a91337\PythonCardif313Projects\cardif_project\dist\ReportingApp"
+
+for root, dirs, files in os.walk(dist_path):
+    for f in files:
+        fp = os.path.join(root, f)
+        size_mb = os.path.getsize(fp) / (1024*1024)
+        if size_mb > 10:  # fichiers > 10 MB
+            print(f"{fp} : {size_mb:.1f} MB")
