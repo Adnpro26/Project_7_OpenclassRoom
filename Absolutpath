@@ -1,0 +1,35 @@
+import os
+import sys
+
+def get_base_path():
+    """
+    Retourne le dossier racine de l'application.
+    Compatible :
+    - VS Code
+    - PyInstaller (.exe)
+    """
+    
+    if getattr(sys, 'frozen', False):
+        # cas exe
+        return os.path.dirname(sys.executable)
+    else:
+        # cas développement
+        return os.path.dirname(os.path.abspath(__file__))
+
+
+BASE_DIR = get_base_path()
+
+INPUT_DIR = os.path.join(BASE_DIR, "Input")
+OUTPUT_DIR = os.path.join(BASE_DIR, "Output")
+REF_DIR = os.path.join(BASE_DIR, "Référentiel")
+
+
+def create_folders():
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(REF_DIR, exist_ok=True)
+
+
+from src.paths import create_folders
+
+create_folders()
