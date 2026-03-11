@@ -1,0 +1,8 @@
+I am preparing to process an input file into our database. The file will be validated, enriched, and aggregated to generate reporting tables and dashboards. To ensure smooth processing and consistency, I would like to clarify a few points about the file structure:
+Is this file generated automatically or manually? Which system or table is its source?
+What are the columns in the file, and what are their data types?
+Are there mandatory fields, and are there optional columns that can be empty?
+Are there specific formatting rules (e.g., dates, decimals, text)?
+Are there unique identifiers or keys that should be preserved?
+Can we expect the structure and column names to remain stable over time?
+What is the expected size of the file, and how often will new files be generated?
