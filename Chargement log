@@ -1,0 +1,27 @@
+# app.py
+
+import sys
+import logging
+from src.paths import ensure_directories
+from src.logger_config import setup_logger
+
+# 1️⃣ Configurer le logging dès le départ
+setup_logger()
+
+# 2️⃣ Installer le gestionnaire global des exceptions
+def handle_exception(exc_type, exc_value, exc_traceback):
+    logging.exception("Erreur non gérée", exc_info=(exc_type, exc_value, exc_traceback))
+
+sys.excepthook = handle_exception
+
+# 3️⃣ Créer les dossiers nécessaires
+ensure_directories()
+
+# 4️⃣ Importer et lancer l'application
+from src.reporting_app import ReportingApp
+import ttkbootstrap as ttk
+
+if __name__ == "__main__":
+    root = ttk.Window(themename="default")
+    app = ReportingApp(root)
+    root.mainloop()
