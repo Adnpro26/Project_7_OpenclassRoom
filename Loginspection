@@ -1,0 +1,45 @@
+Étape 4 — Créer le système de logs
+Créer :
+Copier le code
+
+src/logger_config.py
+Code :
+Python
+Copier le code
+import logging
+from datetime import datetime
+from src.paths import PATH_LOGS
+import getpass
+
+def setup_logger():
+
+    user = getpass.getuser()
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+
+    log_file = PATH_LOGS / f"session_{timestamp}.log"
+
+    logging.basicConfig(
+        filename=log_file,
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(module)s | %(message)s"
+    )
+
+    logging.info("Application démarrée")
+    logging.info(f"Utilisateur : {user}")
+
+import logging
+from src.paths import PATH_INPUT
+import pandas as pd
+
+def load_input():
+
+    logging.info("Lecture fichier input")
+
+    file = PATH_INPUT / "data.xlsx"
+
+    df = pd.read_excel(file)
+
+    logging.info(f"Input chargé : {file}")
+
+    return df
