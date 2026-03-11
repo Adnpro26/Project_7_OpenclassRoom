@@ -1,0 +1,7 @@
+excludes=[
+    "babel",
+    "scipy",
+    "matplotlib.tests",
+    "matplotlib.backends.backend_qt5agg",
+    "tkinter.test",
+]
