@@ -1,0 +1,25 @@
+mapping_indicateurs:
+  NBI:
+    MAIN: NBI_HORS_ONE
+    IFRS: NBI_IFRS17
+
+import yaml
+
+with open("config.yaml", "r") as f:
+    config = yaml.safe_load(f)
+
+def get_indicateur_base(config, indicateur, niveau):
+
+    try:
+        return config["mapping_indicateurs"][indicateur][niveau]
+    except KeyError:
+        return indicateur  # fallback
+
+
+def transform_key(config, key):
+
+    indicateur, entite, date, niveau = key
+
+    indicateur_base = get_indicateur_base(config, indicateur, niveau)
+
+    return (indicateur_base, entite, date, niveau)
