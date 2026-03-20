@@ -1,0 +1,38 @@
+# config/transco.py
+
+import pickle
+import os
+
+class Transco:
+    _data = None
+
+    @classmethod
+    def load(cls, path):
+        import yaml
+        with open(path, "r") as f:
+            cls._data = yaml.safe_load(f)
+
+    @classmethod
+    def save_cache(cls, path="temp/transco.pkl"):
+        with open(path, "wb") as f:
+            pickle.dump(cls._data, f)
+
+    @classmethod
+    def load_cache(cls, path="temp/transco.pkl"):
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                cls._data = pickle.load(f)
+
+
+👉 dans ton projet :
+Plain text
+main.py
+Python
+from config.transco import Transco
+
+Transco.load("config/ref.yaml")
+👉 puis partout :
+Python
+from config.transco import Transco
+
+Transco.get_list("pays")
