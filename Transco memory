@@ -1,0 +1,46 @@
+import pandas as pd
+import yaml
+
+
+class Transco:
+    _data = {}
+
+    @classmethod
+    def load(cls, config_path):
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+
+        cls._data = {}
+
+        for name, conf in config.items():
+            cls._data.update(cls._load_excel_transco(conf))
+
+    @staticmethod
+    def _load_excel_transco(conf):
+        df = pd.read_excel(conf["path"], sheet_name=conf["sheet"])
+
+        type_col = conf["type_col"]
+        key_col = conf["key_col"]
+        value_col = conf["value_col"]
+
+        result = {}
+
+        # group by type_liste
+        for transco_name, group in df.groupby(type_col):
+            result[transco_name] = dict(
+                zip(group[key_col], group[value_col])
+            )
+
+        return result
+
+    @classmethod
+    def get(cls, name):
+        return cls._data.get(name)
+
+
+Transco.load("config.yaml")
+
+pays = Transco.get("pays")
+indicateurs = Transco.get("indicateur")
+
+print(pays["FR"])  
