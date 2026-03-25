@@ -1,0 +1,74 @@
+
+    # ----------------------------
+    # CONSTRUCTION UI
+    # ----------------------------
+    def build_reporting_selector(self):
+
+        # Label
+        ttk.Label(
+            self.parameters_frame,
+            text="Type de reporting"
+        ).grid(row=2, column=0, sticky="w", pady=5)
+
+        # Liste des reportings
+        reporting_list = [""]
+
+        # Variables
+        self.reporting_vars = {}
+        self.var_all = ttk.BooleanVar()
+
+        # Fonction ALL
+        def toggle_all():
+            state = self.var_all.get()
+            for var in self.reporting_vars.values():
+                var.set(state)
+
+        # Checkbox ALL
+        ttk.Checkbutton(
+            self.parameters_frame,
+            text="ALL",
+            variable=self.var_all,
+            command=toggle_all,
+            bootstyle="success-round-toggle"
+        ).grid(row=2, column=1, sticky="w")
+
+        # Checkboxes individuelles
+        for i, rpt in enumerate(reporting_list):
+
+            var = ttk.BooleanVar()
+            self.reporting_vars[rpt] = var
+
+            # Synchronisation avec ALL
+            def update_all_state(*args):
+                if all(v.get() for v in self.reporting_vars.values()):
+                    self.var_all.set(True)
+                else:
+                    self.var_all.set(False)
+
+            var.trace_add("write", update_all_state)
+
+            ttk.Checkbutton(
+                self.parameters_frame,
+                text=rpt,
+                variable=var,
+                bootstyle="round-toggle"
+            ).grid(row=3 + i, column=1, sticky="w")
+
+    # ----------------------------
+    # RÉCUPÉRATION DES VALEURS
+    # ----------------------------
+    def get_selected_reportings(self):
+
+        if self.var_all.get():
+            return "ALL"
+
+        return [k for k, v in self.reporting_vars.items() if v.get()]
+
+    # ----------------------------
+    # TEST
+    # ----------------------------
+    def print_selection(self):
+        selected = self.get_selected_reportings()
+        print("Sélection :", selected)
+
+
