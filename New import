@@ -1,0 +1,54 @@
+import pandas as pd
+
+
+def load_and_enrich_excel(
+    file_path,
+    sheet_name,
+    indicator_col,
+    mapping_dict
+):
+    """
+    Charge un fichier Excel et enrichit avec un mapping indicateur.
+
+    Parameters:
+        file_path (str): chemin du fichier
+        sheet_name (str): feuille Excel
+        indicator_col (str): colonne contenant l'indicateur
+        mapping_dict (dict): mapping indicateur → attributs
+
+    Returns:
+        DataFrame enrichi
+    """
+
+    # ----------------------------
+    # 1. Load Excel
+    # ----------------------------
+    df = pd.read_excel(file_path, sheet_name=sheet_name)
+
+    # ----------------------------
+    # 2. Normalisation
+    # ----------------------------
+    df[indicator_col] = df[indicator_col].astype(str).str.upper()
+
+    # ----------------------------
+    # 3. Mapping → DataFrame
+    # ----------------------------
+    mapping_df = pd.DataFrame.from_dict(mapping_dict, orient="index")
+
+    mapping_df.index = mapping_df.index.str.upper()
+    mapping_df.reset_index(inplace=True)
+    mapping_df.rename(columns={"index": indicator_col}, inplace=True)
+
+    # ----------------------------
+    # 4. Merge (enrichissement)
+    # ----------------------------
+    df = df.merge(mapping_df, on=indicator_col, how="left")
+
+    # ----------------------------
+    # 5. Debug (optionnel)
+    # ----------------------------
+    missing = df[df.isna().any(axis=1)]
+    if not missing.empty:
+        print("⚠️ Indicateurs non mappés :", missing[indicator_col].unique())
+
+    return df
