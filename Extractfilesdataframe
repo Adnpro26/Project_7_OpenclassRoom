@@ -1,0 +1,284 @@
+from openpyxl import load_workbook
+from openpyxl.cell.cell import MergedCell
+from openpyxl.utils import get_column_letter
+from collections import defaultdict, deque, Counter
+import pandas as pd
+import re
+import math
+
+
+# =========================
+# Header Scorer (NLP léger)
+# =========================
+class HeaderScorer:
+
+    def __init__(self, cells):
+        self.cells = cells
+        self.corpus = self._build_corpus()
+
+    def _tokenize(self, text):
+        return re.findall(r"\b\w+\b", str(text).lower())
+
+    def _build_corpus(self):
+        tokens = []
+        for v in self.cells.values():
+            if isinstance(v, str):
+                tokens.extend(self._tokenize(v))
+        return Counter(tokens)
+
+    def tf_idf_score(self, text):
+        tokens = self._tokenize(text)
+        score = 0
+
+        for t in tokens:
+            tf = tokens.count(t)
+            df = self.corpus.get(t, 1)
+            idf = math.log(len(self.corpus) / df) if df else 0
+            score += tf * idf
+
+        return score
+
+    def score_row(self, row_values):
+        text_values = [v for v in row_values if isinstance(v, str)]
+        num_values = [v for v in row_values if isinstance(v, (int, float))]
+
+        if not row_values:
+            return 0
+
+        text_ratio = len(text_values) / len(row_values)
+        num_ratio = len(num_values) / len(row_values)
+
+        tfidf = sum(self.tf_idf_score(v) for v in text_values)
+        avg_len = sum(len(str(v)) for v in text_values) / (len(text_values) or 1)
+
+        return (
+            2 * text_ratio
+            - 1.5 * num_ratio
+            + 0.01 * tfidf
+            + 0.01 * avg_len
+        )
+
+
+# =========================
+# Main Extractor
+# =========================
+class ExcelTableExtractor:
+
+    def __init__(self, file_path, sheet_name):
+        self.file_path = file_path
+        self.sheet_name = sheet_name
+
+        self.wb = None
+        self.ws = None
+
+        self.cells = {}
+        self.numeric_cells = set()
+        self.cluster = set()
+
+        self.bounds = None
+        self.header_rows = []
+        self.label_cols = []
+
+    # -------------------------
+    @staticmethod
+    def is_numeric(value):
+        return isinstance(value, (int, float))
+
+    # -------------------------
+    def load_sheet(self):
+        self.wb = load_workbook(self.file_path, data_only=True)
+        self.ws = self.wb[self.sheet_name]
+
+    # -------------------------
+    def expand_merged_cells(self):
+        cell_values = {}
+
+        for row in self.ws.iter_rows():
+            for cell in row:
+                if isinstance(cell, MergedCell):
+                    continue
+                if cell.value is not None:
+                    cell_values[(cell.row, cell.column)] = cell.value
+
+        for merged in self.ws.merged_cells.ranges:
+            min_col, min_row, max_col, max_row = merged.bounds
+            value = self.ws.cell(min_row, min_col).value
+
+            for r in range(min_row, max_row + 1):
+                for c in range(min_col, max_col + 1):
+                    cell_values[(r, c)] = value
+
+        self.cells = cell_values
+
+    # -------------------------
+    def detect_numeric_cells(self):
+        numeric = set()
+
+        for (r, c), v in self.cells.items():
+            if self.is_numeric(v):
+                numeric.add((r, c))
+
+        self.numeric_cells = numeric
+
+    # -------------------------
+    def find_main_cluster(self, max_dr=2, max_dc=2):
+        visited = set()
+        best_cluster = set()
+
+        for cell in self.numeric_cells:
+            if cell in visited:
+                continue
+
+            q = deque([cell])
+            cluster = {cell}
+            visited.add(cell)
+
+            while q:
+                r, c = q.popleft()
+
+                for rr in range(r - max_dr, r + max_dr + 1):
+                    for cc in range(c - max_dc, c + max_dc + 1):
+                        nb = (rr, cc)
+
+                        if nb in self.numeric_cells and nb not in visited:
+                            visited.add(nb)
+                            q.append(nb)
+                            cluster.add(nb)
+
+            if len(cluster) > len(best_cluster):
+                best_cluster = cluster
+
+        self.cluster = best_cluster
+
+    # -------------------------
+    def detect_bounds(self):
+        rows = [r for r, _ in self.cluster]
+        cols = [c for _, c in self.cluster]
+
+        self.bounds = (
+            min(rows),
+            max(rows),
+            min(cols),
+            max(cols)
+        )
+
+    # -------------------------
+    # ⭐ Détection intelligente des headers
+    # -------------------------
+    def detect_headers(self):
+        min_row, _, min_col, _ = self.bounds
+
+        scorer = HeaderScorer(self.cells)
+
+        # ---- Header rows ----
+        header_rows = []
+
+        for r in range(min_row - 1, 0, -1):
+            row_values = [
+                self.cells.get((r, c))
+                for c in range(min_col, min_col + 10)
+            ]
+
+            score = scorer.score_row(row_values)
+
+            if score > 0.5:
+                header_rows.append(r)
+            else:
+                break
+
+        self.header_rows = sorted(header_rows)
+
+        # ---- Label columns ----
+        label_cols = []
+
+        for c in range(min_col - 1, 0, -1):
+            col_values = [
+                self.cells.get((r, c))
+                for r in range(min_row, min_row + 10)
+            ]
+
+            score = scorer.score_row(col_values)
+
+            if score > 0.5:
+                label_cols.append(c)
+            else:
+                break
+
+        self.label_cols = sorted(label_cols)
+
+    # -------------------------
+    def extract_axes(self):
+        min_row, max_row, min_col, max_col = self.bounds
+
+        col_axes = defaultdict(list)
+        row_axes = {}
+
+        # Colonnes
+        for c in range(min_col, max_col + 1):
+            for r in self.header_rows:
+                v = self.cells.get((r, c))
+                if v and not self.is_numeric(v):
+                    col_axes[c].append(str(v))
+
+        # Lignes
+        for r in range(min_row, max_row + 1):
+            labels = []
+            for c in self.label_cols:
+                v = self.cells.get((r, c))
+                if v and not self.is_numeric(v):
+                    labels.append(str(v))
+            if labels:
+                row_axes[r] = labels
+
+        return row_axes, col_axes
+
+    # -------------------------
+    def build_dataframe(self, row_axes, col_axes):
+        min_row, max_row, min_col, max_col = self.bounds
+
+        records = []
+
+        for r in range(min_row, max_row + 1):
+            for c in range(min_col, max_col + 1):
+                v = self.cells.get((r, c))
+
+                if v is None or not self.is_numeric(v):
+                    continue
+
+                record = {
+                    "Valeur": float(v),
+                    "Cell": f"{get_column_letter(c)}{r}"
+                }
+
+                for i, label in enumerate(row_axes.get(r, [])):
+                    record[f"Row_Axis_{i+1}"] = label
+
+                for i, label in enumerate(col_axes.get(c, [])):
+                    record[f"Col_Axis_{i+1}"] = label
+
+                records.append(record)
+
+        return pd.DataFrame(records)
+
+    # -------------------------
+    def run(self):
+        self.load_sheet()
+        self.expand_merged_cells()
+        self.detect_numeric_cells()
+        self.find_main_cluster()
+        self.detect_bounds()
+        self.detect_headers()
+
+        row_axes, col_axes = self.extract_axes()
+
+        return self.build_dataframe(row_axes, col_axes)
+
+
+# =========================
+# Exemple d'utilisation
+# =========================
+if __name__ == "__main__":
+    extractor = ExcelTableExtractor("mon_fichier.xlsx", "Sheet1")
+    df = extractor.run()
+
+    print(df.head())
