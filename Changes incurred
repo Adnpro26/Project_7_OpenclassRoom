@@ -1,0 +1,44 @@
+def compute_incurred(df, rng):
+
+    n = len(df)
+
+    # -------------------------
+    # PRIMES (faible volatilité)
+    # -------------------------
+    df["prime_incurred"] = df["prime_expected"] * rng.normal(
+        1.00, 0.02, n
+    )
+
+    # -------------------------
+    # COMMISSIONS (liées au réel)
+    # -------------------------
+    df["commission_incurred"] = df["commission_expected"] * rng.normal(
+        1.00, 0.05, n
+    )
+
+    # -------------------------
+    # FRAIS (dérive de gestion)
+    # -------------------------
+    df["frais_incurred"] = df["frais_expected"] * rng.normal(
+        1.00, 0.08, n
+    )
+
+    # -------------------------
+    # SINISTRES (forte volatilité)
+    # asymétrique type assurance réelle
+
+    # -------------------------
+    df["sinistres_incurred"] = df["sinistres_expected"] * rng.lognormal(
+        mean=0,
+        sigma=0.35,
+        size=n
+    )
+
+    return df
+
+
+df = compute_expected(df, rng)
+
+df = compute_incurred(df, rng)   # 👈 AJOUT IMPORTANT
+
+df = compute_bba_metrics(df, cfg)
