@@ -1,0 +1,66 @@
+def inject_missing_data(df, rng, rate=0.12):
+
+    n = len(df)
+
+    # =====================================================
+    # 1. MCAR - missing aléatoires simples
+    # =====================================================
+
+    m = int(rate * 0.25 * n)
+
+    for col in ["revenu", "region", "profession", "statut_marital"]:
+        idx = rng.choice(n, m, replace=False)
+        df.loc[idx, col] = np.nan
+
+    # =====================================================
+    # 2. MAR - missing conditionnels (très important)
+    # =====================================================
+
+    # indépendants → revenu souvent manquant
+    idx = df[df["profession"] == "independant"].index
+    idx = rng.choice(idx, int(0.30 * len(idx)), replace=False)
+    df.loc[idx, "revenu"] = np.nan
+
+    # retraités → profession parfois inconnue
+    idx = df[df["profession"] == "retraite"].index
+    idx = rng.choice(idx, int(0.15 * len(idx)), replace=False)
+    df.loc[idx, "profession"] = np.nan
+
+    # jeunes → statut marital souvent manquant
+    idx = df[df["age"] < 25].index
+    idx = rng.choice(idx, int(0.20 * len(idx)), replace=False)
+    df.loc[idx, "statut_marital"] = np.nan
+
+    # =====================================================
+    # 3. SYSTEM MISSING (très réaliste assurance)
+    # =====================================================
+
+    # sinistres non remontés (IT lag)
+    idx = rng.choice(n, int(rate * 0.10 * n), replace=False)
+    df.loc[idx, "sinistres_incurred"] = np.nan
+
+    # commissions non calculées
+    idx = rng.choice(n, int(rate * 0.05 * n), replace=False)
+    df.loc[idx, "commission_incurred"] = np.nan
+
+    # frais non comptabilisés
+    idx = rng.choice(n, int(rate * 0.05 * n), replace=False)
+    df.loc[idx, "frais_incurred"] = np.nan
+
+    # =====================================================
+    # 4. EXPECTED vs INCURRED GAP MISSING (IFRS 17 classique)
+    # =====================================================
+
+    # parfois incurred existe mais pas expected (mauvais mapping)
+    idx = rng.choice(n, int(rate * 0.03 * n), replace=False)
+    df.loc[idx, "sinistres_expected"] = np.nan
+
+    # =====================================================
+    # 5. STRUCTURAL MISSING (variables métier dépendantes)
+    # =====================================================
+
+    # revenu manquant impacte calculs downstream
+    idx = df[df["revenu"].isna()].index
+    df.loc[idx, "nb_enfants"] = np.nan
+
+    return df
