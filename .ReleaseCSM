@@ -1,0 +1,48 @@
+def compute_coverage_units(df):
+
+    # =====================================================
+    # 1. BASE DE RISQUE (proxy IFRS 17)
+    # =====================================================
+    risk_factor = (
+        df["capital_assure"] / df["capital_assure"].mean()
+    )
+
+    # =====================================================
+    # 2. PROFIL PRODUIT (intensité du service)
+    # =====================================================
+    product_factor = df["produit"].map({
+        "emprunteur_immo": 1.2,
+        "emprunteur_conso": 1.0,
+        "protection_individuelle": 1.1
+    }).values
+
+    # =====================================================
+    # 3. AGE EFFECT (risque décroissant ou croissant)
+    # =====================================================
+    age_factor = 1 + (df["age"] - 40) / 100
+    age_factor = np.clip(age_factor, 0.7, 1.5)
+
+    # =====================================================
+    # 4. COVERAGE UNIT ANNUELLE
+    # =====================================================
+    df["coverage_unit_annual"] = (
+        risk_factor * product_factor * age_factor
+    )
+
+    # =====================================================
+    # 5. TOTAL COVERAGE UNIT CONTRACT
+    # =====================================================
+    df["coverage_units_total"] = (
+        df["coverage_unit_annual"] * df["duration"]
+    )
+
+    # =====================================================
+    # 6. RATIO POUR RELEASE CSM
+    # =====================================================
+    df["coverage_ratio"] = (
+        df["age_contrat"] / df["duration"]
+    )
+
+    df["coverage_ratio"] = np.clip(df["coverage_ratio"], 0, 1)
+
+    return df
