@@ -1,0 +1,233 @@
+import numpy as np
+import pandas as pd
+from datetime import datetime
+import os
+
+
+# =========================
+# 1. CONFIG + METADATA RUN
+# =========================
+def config():
+    return {
+        "n_contracts": 10000,
+        "discount_rate": 0.01,
+        "seed": 42,
+        "output_path": "./outputs"
+    }
+
+
+def get_run_metadata():
+    return {
+        "run_timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "run_id": datetime.now().strftime("%Y%m%d_%H%M%S")
+    }
+
+
+# =========================
+# 2. PROFIL CLIENT + CONTRAT
+# =========================
+def generate_base(n, rng):
+
+    age = rng.integers(18, 81, n)
+
+    sexe = rng.choice(["H", "F"], n, p=[0.49, 0.51])
+
+    region = rng.choice(
+        ["Nord", "Sud", "Est", "Ouest", "IDF"],
+        n
+    )
+
+    revenu = np.clip(rng.normal(35000, 15000, n), 8000, 200000)
+
+    bonus_malus = rng.choice(
+        [0.5, 0.7, 0.8, 0.9, 1.0, 1.2, 1.5],
+        n,
+        p=[0.02, 0.08, 0.15, 0.25, 0.30, 0.15, 0.05]
+    )
+
+    generation = rng.choice([2019, 2020, 2021, 2022, 2023, 2024], n)
+
+    produit = rng.choice(["auto", "habitation", "sante"], n, p=[0.5, 0.3, 0.2])
+
+    duration = rng.integers(1, 11, n)
+
+    return pd.DataFrame({
+        "age": age,
+        "sexe": sexe,
+        "region": region,
+        "revenu": revenu,
+        "bonus_malus": bonus_malus,
+        "generation": generation,
+        "produit": produit,
+        "duration": duration
+    })
+
+
+# =========================
+# 3. PRICING / CASHFLOWS EXPECTED
+# =========================
+def compute_expected(df, rng):
+
+    prod_factor = df["produit"].map({
+        "auto": 1.0,
+        "habitation": 0.85,
+        "sante": 1.25
+    }).values
+
+    prime = (
+        250
+        + df["age"].values * 9
+        + df["revenu"].values * 0.01
+    ) * df["bonus_malus"].values * prod_factor
+
+    prime += rng.normal(0, 70, len(df))
+    prime = np.clip(prime, 200, None)
+
+    # taux
+    comm_rate = np.clip(rng.normal(0.15, 0.03, len(df)), 0.05, 0.30)
+    cost_rate = np.clip(rng.normal(0.06, 0.02, len(df)), 0.02, 0.15)
+
+    commission = prime * comm_rate
+    frais = prime * cost_rate
+
+    # sinistres (frequency-severity)
+    freq = 0.04 + 0.07 * (df["bonus_malus"].values - 0.5)
+    freq = np.clip(freq, 0.01, 0.25)
+
+    nb_sin = rng.poisson(freq)
+
+    severity = rng.gamma(2, 1100, len(df))
+    sinistres = nb_sin * severity
+
+    return prime, commission, frais, sinistres
+
+
+# =========================
+# 4. BBA CORE (PV + RA + CSM)
+# =========================
+def compute_bba(df, prime, commission, frais, sinistres, discount=0.01):
+
+    n = len(df)
+
+    # PV simplifié (approximation actuarielle)
+    pv_primes = prime * df["duration"].values
+    pv_comm = commission * df["duration"].values
+    pv_frais = frais * df["duration"].values
+    pv_sin = sinistres * df["duration"].values
+
+    # discounting simplifié
+    dfc = 1 / (1 + discount) ** df["duration"].values
+
+    pv_primes *= dfc
+    pv_comm *= dfc
+    pv_frais *= dfc
+    pv_sin *= dfc
+
+    # RA (volatilité sinistres)
+    ra = 0.20 * np.abs(sinistres)
+
+    # CSM initiale
+    csm = (
+        pv_primes
+        - pv_comm
+        - pv_frais
+        - pv_sin
+        - ra
+    )
+
+    csm = np.clip(csm, 0, None)
+
+    return pv_primes, pv_comm, pv_frais, pv_sin, ra, csm
+
+
+# =========================
+# 5. DATA QUALITY (SUBTLE)
+# =========================
+def inject_quality(df, rng):
+
+    n = len(df)
+
+    # âge légèrement bruité (plausible)
+    idx = rng.choice(n, int(0.01 * n), replace=False)
+    df.loc[idx, "age"] = df.loc[idx, "age"] + rng.integers(-2, 3, len(idx))
+
+    # revenu légèrement incohérent
+    idx = rng.choice(n, int(0.01 * n), replace=False)
+    df.loc[idx, "revenu"] *= rng.uniform(0.5, 1.5, len(idx))
+
+    # region typo légère
+    idx = rng.choice(n, int(0.01 * n), replace=False)
+    df.loc[idx, "region"] = df.loc[idx, "region"].replace("IDF", "Ile de France")
+
+    # commissions légèrement hors bornes
+    idx = rng.choice(n, int(0.005 * n), replace=False)
+    df.loc[idx, "commission_rate_flag"] = 0.9  # incohérence implicite
+
+    return df
+
+
+# =========================
+# 6. EXPORT
+# =========================
+def save_dataset(df, metadata, path):
+
+    os.makedirs(path, exist_ok=True)
+
+    filename = f"bba_portefeuille_{metadata['run_id']}.csv"
+    filepath = os.path.join(path, filename)
+
+    df.to_csv(filepath, index=False)
+
+    # metadata
+    meta_path = os.path.join(path, f"metadata_{metadata['run_id']}.json")
+    pd.Series(metadata).to_json(meta_path)
+
+    return filepath
+
+
+# =========================
+# 7. PIPELINE COMPLET
+# =========================
+def build_bba_portfolio():
+
+    cfg = config()
+    rng = np.random.default_rng(cfg["seed"])
+    meta = get_run_metadata()
+
+    df = generate_base(cfg["n_contracts"], rng)
+
+    prime, comm, frais, sin = compute_expected(df, rng)
+
+    df["prime_expected"] = prime
+    df["commission_expected"] = comm
+    df["frais_expected"] = frais
+    df["sinistres_expected"] = sin
+
+    pv_p, pv_c, pv_f, pv_s, ra, csm = compute_bba(
+        df, prime, comm, frais, sin, cfg["discount_rate"]
+    )
+
+    df["pv_primes"] = pv_p
+    df["pv_commissions"] = pv_c
+    df["pv_frais"] = pv_f
+    df["pv_sinistres"] = pv_s
+    df["risk_adjustment"] = ra
+    df["csm"] = csm
+
+    # data quality (après calcul volontairement)
+    df = inject_quality(df, rng)
+
+    file_path = save_dataset(df, meta, cfg["output_path"])
+
+    meta["file_path"] = file_path
+
+    return df, meta
+
+
+# =========================
+# RUN
+# =========================
+df, meta = build_bba_portfolio()
+
+print(meta)
+print(df.head())
