@@ -1,0 +1,255 @@
+import numpy as np
+import pandas as pd
+from datetime import datetime
+import os
+
+
+# =========================================================
+# 1. CONFIG + RUN METADATA
+# =========================================================
+def config():
+    return {
+        "n": 10000,
+        "seed": 42,
+        "discount_rate": 0.01,
+        "lapse_rate": 0.03,
+        "inflation_fees": 0.02,
+        "inflation_claims": 0.03,
+        "output_dir": "./outputs"
+    }
+
+
+def run_metadata():
+    return {
+        "run_id": datetime.now().strftime("%Y%m%d_%H%M%S"),
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+
+# =========================================================
+# 2. BASE CONTRATS / ASSURES
+# =========================================================
+def generate_base(n, rng):
+
+    df = pd.DataFrame()
+
+    df["contrat_id"] = [f"C{i:06d}" for i in range(n)]
+    df["assure_id"] = [f"A{i:06d}" for i in range(n)]
+
+    # profil client
+    df["age"] = rng.integers(18, 80, n)
+    df["sexe"] = rng.choice(["H", "F"], n, p=[0.49, 0.51])
+
+    df["revenu"] = np.clip(rng.normal(35000, 15000, n), 8000, 200000)
+
+    df["bonus_malus"] = rng.choice(
+        [0.5, 0.7, 0.8, 0.9, 1.0, 1.2, 1.5],
+        n,
+        p=[0.02, 0.08, 0.15, 0.25, 0.30, 0.15, 0.05]
+    )
+
+    df["region"] = rng.choice(
+        ["Nord", "Sud", "Est", "Ouest", "IDF"],
+        n
+    )
+
+    # PRODUITS IFRS 17 BBA
+    df["produit"] = rng.choice(
+        ["emprunteur_immo", "emprunteur_conso", "protection_individuelle"],
+        n,
+        p=[0.45, 0.25, 0.30]
+    )
+
+    # =====================================================
+    # DURATION COHERENTE PAR PRODUIT (KEY IFRS 17 FIX)
+    # =====================================================
+    duration = np.zeros(n)
+
+    mask_immo = df["produit"] == "emprunteur_immo"
+    mask_conso = df["produit"] == "emprunteur_conso"
+    mask_prot = df["produit"] == "protection_individuelle"
+
+    duration[mask_immo] = rng.normal(12, 3, mask_immo.sum())
+    duration[mask_conso] = rng.normal(5, 2, mask_conso.sum())
+    duration[mask_prot] = rng.normal(7, 2, mask_prot.sum())
+
+    df["duration"] = np.clip(duration, 1, 20).astype(int)
+
+    return df
+
+
+# =========================================================
+# 3. PRICING / CASHFLOWS EXPECTED
+# =========================================================
+def compute_expected(df, rng):
+
+    prod_factor = df["produit"].map({
+        "emprunteur_immo": 1.3,
+        "emprunteur_conso": 1.0,
+        "protection_individuelle": 1.1
+    }).values
+
+    # PRIMES
+    prime = (
+        250
+        + df["age"].values * 9
+        + df["revenu"].values * 0.01
+    ) * df["bonus_malus"].values * prod_factor
+
+    prime += rng.normal(0, 70, len(df))
+    prime = np.clip(prime, 200, None)
+
+    # RATIOS
+    comm_rate = np.clip(rng.normal(0.15, 0.03, len(df)), 0.05, 0.30)
+    cost_rate = np.clip(rng.normal(0.06, 0.02, len(df)), 0.02, 0.15)
+
+    commission = prime * comm_rate
+    frais = prime * cost_rate
+
+    # CLAIMS (frequency / severity)
+    freq = 0.04 + 0.07 * (df["bonus_malus"].values - 0.5)
+    freq = np.clip(freq, 0.01, 0.25)
+
+    nb_claims = rng.poisson(freq)
+
+    severity = rng.gamma(2, 1100, len(df))
+    sinistres = nb_claims * severity
+
+    df["prime_expected"] = prime
+    df["commission_expected"] = commission
+    df["frais_expected"] = frais
+    df["sinistres_expected"] = sinistres
+
+    return df
+
+
+# =========================================================
+# 4. BBA CASHFLOW ENGINE (CORE IFRS 17)
+# =========================================================
+def bba_engine(row, r=0.01, lapse=0.03, infl_f=0.02, infl_c=0.03):
+
+    T = row["duration"]
+
+    pv_p = pv_c = pv_f = pv_s = 0
+    survival = 1.0
+
+    for t in range(1, T + 1):
+
+        survival *= (1 - lapse)
+
+        df = 1 / (1 + r) ** t
+
+        prime_t = row["prime_expected"] * survival
+        comm_t = row["commission_expected"] * survival
+        frais_t = row["frais_expected"] * (1 + infl_f) ** t
+        sin_t = row["sinistres_expected"] * (1 + infl_c) ** t
+
+        pv_p += prime_t * df
+        pv_c += comm_t * df
+        pv_f += frais_t * df
+        pv_s += sin_t * df
+
+    return pv_p, pv_c, pv_f, pv_s
+
+
+# =========================================================
+# 5. BBA METRICS (CSM + RA)
+# =========================================================
+def compute_bba_metrics(df, cfg):
+
+    results = df.apply(lambda r: bba_engine(
+        r,
+        cfg["discount_rate"],
+        cfg["lapse_rate"],
+        cfg["inflation_fees"],
+        cfg["inflation_claims"]
+    ), axis=1)
+
+    df[["pv_primes", "pv_commissions", "pv_frais", "pv_sinistres"]] = pd.DataFrame(results.tolist(), index=df.index)
+
+    # Risk Adjustment
+    df["risk_adjustment"] = 0.20 * df["pv_sinistres"]
+
+    # CSM
+    df["csm"] = (
+        df["pv_primes"]
+        - df["pv_commissions"]
+        - df["pv_frais"]
+        - df["pv_sinistres"]
+        - df["risk_adjustment"]
+    )
+
+    df["csm"] = np.clip(df["csm"], 0, None)
+
+    return df
+
+
+# =========================================================
+# 6. DATA QUALITY (REALISTIC / SUBTLE)
+# =========================================================
+def inject_data_quality(df, rng):
+
+    n = len(df)
+
+    # small age noise
+    idx = rng.choice(n, int(0.01 * n), replace=False)
+    df.loc[idx, "age"] += rng.integers(-2, 3, len(idx))
+
+    # revenue distortion
+    idx = rng.choice(n, int(0.01 * n), replace=False)
+    df.loc[idx, "revenu"] *= rng.uniform(0.6, 1.4, len(idx))
+
+    # region typo
+    idx = rng.choice(n, int(0.01 * n), replace=False)
+    df.loc[idx, "region"] = "Ile de France"
+
+    return df
+
+
+# =========================================================
+# 7. EXPORT
+# =========================================================
+def export(df, meta, cfg):
+
+    os.makedirs(cfg["output_dir"], exist_ok=True)
+
+    file = f"{cfg['output_dir']}/bba_portfolio_{meta['run_id']}.csv"
+    df.to_csv(file, index=False)
+
+    meta_file = f"{cfg['output_dir']}/metadata_{meta['run_id']}.json"
+    pd.Series(meta).to_json(meta_file)
+
+    return file
+
+
+# =========================================================
+# 8. PIPELINE GLOBAL
+# =========================================================
+def build_portfolio():
+
+    cfg = config()
+    rng = np.random.default_rng(cfg["seed"])
+    meta = run_metadata()
+
+    df = generate_base(cfg["n"], rng)
+
+    df = compute_expected(df, rng)
+
+    df = compute_bba_metrics(df, cfg)
+
+    df = inject_data_quality(df, rng)
+
+    file = export(df, meta, cfg)
+
+    meta["file"] = file
+
+    return df, meta
+
+
+# =========================================================
+# RUN
+# =========================================================
+df, meta = build_portfolio()
+
+print(meta)
+print(df.head())
