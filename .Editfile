@@ -1,0 +1,14 @@
+df = compute_bba(df, cfg)
+
+df = compute_coverage_units(df)   # ✔ obligatoire avant
+
+# ✔ ICI tu peux faire le calcul CSM
+df["csm_released"] = df["csm"] * (
+    (df["coverage_unit_annual"] * df["age_contrat"]) /
+    df["coverage_units_total"]
+)
+
+df["csm_remaining"] = df["csm"] - df["csm_released"]
+df["csm_remaining"] = np.maximum(df["csm_remaining"], 0)
+
+df = inject_quality(df, rng, cfg["data_quality_rate"])
