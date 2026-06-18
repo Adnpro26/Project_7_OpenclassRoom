@@ -1,0 +1,300 @@
+import numpy as np
+import pandas as pd
+import os
+import json
+from datetime import datetime
+
+# =====================================================
+# CONFIG
+# =====================================================
+def config():
+    return {
+        "n": 10000,
+        "seed": 42,
+        "discount_rate": 0.01,
+        "lapse_rate": 0.03,
+        "inflation_fees": 0.02,
+        "inflation_claims": 0.03,
+        "data_quality_rate": 0.15,
+        "output_dir": "./output_data"
+    }
+
+
+def run_metadata():
+    now = datetime.now()
+    return {
+        "run_id": now.strftime("%Y%m%d_%H%M%S"),
+        "timestamp": now.strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+
+# =====================================================
+# BASE PORTFOLIO
+# =====================================================
+def build_base(n, rng):
+
+    df = pd.DataFrame()
+
+    df["contrat_id"] = [f"C{i:06d}" for i in range(n)]
+    df["assure_id"] = [f"A{i:06d}" for i in range(n)]
+
+    df["age"] = rng.integers(18, 80, n)
+    df["sexe"] = rng.choice(["H", "F"], n)
+
+    df["revenu"] = np.clip(rng.normal(35000, 15000, n), 8000, 200000)
+
+    df["profession"] = rng.choice(
+        ["cadre", "employe", "ouvrier", "independant", "retraite"],
+        n
+    )
+
+    df["statut_marital"] = rng.choice(
+        ["celibataire", "marie", "divorce", "veuf"],
+        n
+    )
+
+    df["nb_enfants"] = np.clip(rng.poisson(1.2, n), 0, 5)
+
+    df["region"] = rng.choice(["Nord", "Sud", "Est", "Ouest", "IDF"], n)
+
+    df["produit"] = rng.choice(
+        ["emprunteur_immo", "emprunteur_conso", "protection_individuelle"],
+        n
+    )
+
+    df["generation_contrat"] = np.where(
+        df["produit"] == "emprunteur_immo",
+        rng.integers(2010, 2020, n),
+        np.where(
+            df["produit"] == "emprunteur_conso",
+            rng.integers(2015, 2024, n),
+            rng.integers(2018, 2026, n)
+        )
+    )
+
+    df["duration"] = np.clip(
+        np.where(
+            df["produit"] == "emprunteur_immo", rng.normal(12, 3, n),
+            np.where(df["produit"] == "emprunteur_conso", rng.normal(5, 2, n),
+                     rng.normal(7, 2, n))
+        ),
+        1, 20
+    ).astype(int)
+
+    df["age_contrat"] = np.clip(
+        2026 - df["generation_contrat"],
+        0,
+        df["duration"]
+    )
+
+    df["capital_assure"] = np.where(
+        df["produit"] == "emprunteur_immo",
+        rng.lognormal(12, 0.4, n),
+        rng.lognormal(11, 0.5, n)
+    )
+
+    return df
+
+
+# =====================================================
+# EXPECTED FLOWS
+# =====================================================
+def compute_expected(df, rng):
+
+    prof_factor = df["profession"].map({
+        "cadre": 1.3,
+        "employe": 1.0,
+        "ouvrier": 0.9,
+        "independant": 1.4,
+        "retraite": 0.8
+    })
+
+    prime = (
+        250
+        + 0.0008 * df["capital_assure"]
+        + 0.01 * df["revenu"]
+        + 8 * df["age"]
+    ) * prof_factor
+
+    prime += rng.normal(0, 70, len(df))
+    prime = np.clip(prime, 200, None)
+
+    df["prime_expected"] = prime
+    df["commission_expected"] = prime * rng.uniform(0.1, 0.25, len(df))
+    df["frais_expected"] = prime * rng.uniform(0.02, 0.08, len(df))
+
+    df["sinistres_expected"] = rng.gamma(2, 1500, len(df))
+
+    df["acquisition_cf"] = prime * rng.uniform(0.02, 0.06, len(df))
+
+    return df
+
+
+# =====================================================
+# INCURRED
+# =====================================================
+def compute_incurred(df, rng):
+
+    df["prime_incurred"] = df["prime_expected"] * rng.normal(1, 0.02, len(df))
+    df["commission_incurred"] = df["commission_expected"] * rng.normal(1, 0.05, len(df))
+    df["frais_incurred"] = df["frais_expected"] * rng.normal(1, 0.08, len(df))
+    df["sinistres_incurred"] = df["sinistres_expected"] * rng.lognormal(0, 0.35, len(df))
+
+    return df
+
+
+# =====================================================
+# BBA ENGINE
+# =====================================================
+def bba_engine(row, cfg):
+
+    r = cfg["discount_rate"]
+    lapse = cfg["lapse_rate"]
+
+    T = row["duration"]
+
+    pv_p = pv_c = pv_f = pv_s = pv_acq = 0
+    surv = 1.0
+
+    for t in range(1, T + 1):
+
+        surv *= (1 - lapse)
+        disc = (1 + r) ** (-t)
+
+        pv_p += row["prime_expected"] * surv * disc
+        pv_c += row["commission_expected"] * surv * disc
+        pv_f += row["frais_expected"] * disc
+        pv_s += row["sinistres_expected"] * disc
+        pv_acq += row["acquisition_cf"] * disc
+
+    return pd.Series([pv_p, pv_c, pv_f, pv_s, pv_acq])
+
+
+def compute_bba(df, cfg):
+
+    df[["pv_primes","pv_comm","pv_frais","pv_sin","pv_acq"]] = df.apply(
+        lambda x: bba_engine(x, cfg),
+        axis=1
+    )
+
+    df["risk_adjustment"] = 0.2 * df["pv_sin"]
+
+    df["csm"] = (
+        df["pv_primes"]
+        - df["pv_comm"]
+        - df["pv_frais"]
+        - df["pv_sin"]
+        - df["risk_adjustment"]
+        - df["pv_acq"]
+    )
+
+    df["csm"] = np.maximum(df["csm"], 0)
+
+    return df
+
+
+# =====================================================
+# COVERAGE UNITS
+# =====================================================
+def compute_release(df):
+
+    df["coverage_unit"] = df["capital_assure"]
+
+    df["ratio"] = df["age_contrat"] / df["duration"]
+    df["ratio"] = np.clip(df["ratio"], 0, 1)
+
+    df["csm_released"] = df["csm"] * df["ratio"]
+    df["csm_remaining"] = df["csm"] - df["csm_released"]
+
+    return df
+
+
+# =====================================================
+# DATA QUALITY (AMÉLIORÉ + DOUBLONS INTELLIGENTS)
+# =====================================================
+def inject_quality(df, rng, rate=0.15):
+
+    n = len(df)
+
+    miss = int(rate * 0.35 * n)
+    out = int(rate * 0.25 * n)
+    incoh = int(rate * 0.2 * n)
+    dup = int(rate * 0.1 * n)
+
+    # -------------------------
+    # MISSING
+    # -------------------------
+    cols = ["revenu","profession","capital_assure","prime_expected"]
+    for c in cols:
+        idx = rng.choice(n, miss, replace=False)
+        df.loc[idx, c] = np.nan
+
+    # -------------------------
+    # OUTLIERS
+    # -------------------------
+    idx = rng.choice(n, out, replace=False)
+    df.loc[idx, "age"] = rng.integers(-10, 130, len(idx))
+
+    idx = rng.choice(n, out, replace=False)
+    df.loc[idx, "capital_assure"] *= rng.uniform(10, 50, len(idx))
+
+    # -------------------------
+    # INCOHERENCES
+    # -------------------------
+    idx = rng.choice(n, incoh, replace=False)
+    df.loc[idx, "commission_expected"] *= rng.uniform(2, 5, len(idx))
+
+    idx = rng.choice(n, incoh, replace=False)
+    df.loc[idx, "frais_expected"] *= -1
+
+    # -------------------------
+    # DOUBLONS (SANS AUGMENTER TAILLE)
+    # -------------------------
+    idx = rng.choice(n, dup, replace=False)
+
+    df.loc[idx, "prime_expected"] = df.loc[idx, "prime_expected"].values
+    df.loc[idx, "contrat_id"] = rng.choice(df["contrat_id"], dup)
+
+    return df
+
+
+# =====================================================
+# EXPORT
+# =====================================================
+def export(df, meta, cfg):
+
+    os.makedirs(cfg["output_dir"], exist_ok=True)
+
+    path = os.path.join(cfg["output_dir"], f"portfolio_{meta['run_id']}.csv")
+    df.to_csv(path, index=False)
+
+    with open(os.path.join(cfg["output_dir"], f"meta_{meta['run_id']}.json"), "w") as f:
+        json.dump(meta, f, indent=4)
+
+    return path
+
+
+# =====================================================
+# MAIN
+# =====================================================
+def main():
+
+    cfg = config()
+    rng = np.random.default_rng(cfg["seed"])
+    meta = run_metadata()
+
+    df = build_base(cfg["n"], rng)
+    df = compute_expected(df, rng)
+    df = compute_incurred(df, rng)
+    df = compute_bba(df, cfg)
+    df = compute_release(df)
+    df = inject_quality(df, rng, cfg["data_quality_rate"])
+
+    file_path = export(df, meta, cfg)
+
+    print("DONE:", file_path)
+    print(df.head())
+
+
+if __name__ == "__main__":
+    main()
