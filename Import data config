@@ -1,0 +1,67 @@
+import os
+
+
+# =========================
+# CONFIG EXPORT
+# =========================
+def config_output():
+    return {
+        "output_dir": "./output_data"
+    }
+
+
+# =========================
+# EXPORT FUNCTION
+# =========================
+def export(df, meta, config):
+
+    os.makedirs(config["output_dir"], exist_ok=True)
+
+    file_path = os.path.join(
+        config["output_dir"],
+        f"bba_portfolio_{meta['run_id']}.csv"
+    )
+
+    df.to_csv(file_path, index=False)
+
+    # export metadata
+    meta_path = os.path.join(
+        config["output_dir"],
+        f"metadata_{meta['run_id']}.json"
+    )
+
+    import pandas as pd
+    pd.Series(meta).to_json(meta_path)
+
+    return file_path
+
+
+# =========================
+# MAIN PIPELINE
+# =========================
+def main():
+
+    # 1. création portefeuille + metadata
+    df, meta = build_portfolio()
+
+    # 2. config export
+    cfg = config_output()
+
+    # 3. export fichiers
+    file_path = export(df, meta, cfg)
+
+    # 4. logs utilisateur
+    print("\n✅ DATASET GENERATED SUCCESSFULLY")
+    print(f"📁 File saved as: {file_path}")
+    print(f"🕒 Run timestamp: {meta['timestamp']}")
+
+    # 5. aperçu rapide
+    print("\n🔎 Preview dataset:")
+    print(df.head())
+
+
+# =========================
+# EXECUTION ENTRY POINT
+# =========================
+if __name__ == "__main__":
+    main()
