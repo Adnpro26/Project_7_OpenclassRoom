@@ -1,0 +1,631 @@
+import numpy as np
+import pandas as pd
+import os
+import json
+from datetime import datetime
+
+# =====================================================
+# CONFIG
+# =====================================================
+def config():
+    return {
+        "n": 10000,
+        "seed": 42,
+        "discount_rate": 0.01,
+        "lapse_rate": 0.03,
+        "inflation_fees": 0.02,
+        "inflation_claims": 0.03,
+        "data_quality_rate": 0.12,
+        "output_dir": "./output_data"
+    }
+
+
+def run_metadata():
+    now = datetime.now()
+
+    return {
+        "run_id": now.strftime("%Y%m%d_%H%M%S"),
+        "timestamp": now.strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+
+# =====================================================
+# BASE PORTFOLIO
+# =====================================================
+def build_base(n, rng):
+
+    df = pd.DataFrame()
+
+    df["contrat_id"] = [f"C{i:06d}" for i in range(n)]
+    df["assure_id"] = [f"A{i:06d}" for i in range(n)]
+
+    # socio-démo
+    df["age"] = rng.integers(18, 80, n)
+    df["sexe"] = rng.choice(["H", "F"], n)
+
+    df["revenu"] = np.clip(
+        rng.normal(35000, 15000, n),
+        8000,
+        200000
+    )
+
+    df["profession"] = rng.choice(
+        ["cadre", "employe", "ouvrier",
+         "independant", "retraite"],
+        n,
+        p=[0.25, 0.35, 0.20, 0.10, 0.10]
+    )
+
+    df["statut_marital"] = rng.choice(
+        ["celibataire", "marie",
+         "divorce", "veuf"],
+        n,
+        p=[0.40, 0.45, 0.10, 0.05]
+    )
+
+    df["nb_enfants"] = np.clip(
+        rng.poisson(1.2, n),
+        0,
+        5
+    )
+
+    df["region"] = rng.choice(
+        ["Nord", "Sud", "Est", "Ouest", "IDF"],
+        n
+    )
+
+    # Produits BBA
+    df["produit"] = rng.choice(
+        [
+            "emprunteur_immo",
+            "emprunteur_conso",
+            "protection_individuelle"
+        ],
+        n,
+        p=[0.45, 0.25, 0.30]
+    )
+
+    # génération
+    df["generation_contrat"] = np.where(
+        df["produit"] == "emprunteur_immo",
+        rng.integers(2010, 2020, n),
+        np.where(
+            df["produit"] == "emprunteur_conso",
+            rng.integers(2015, 2024, n),
+            rng.integers(2018, 2026, n)
+        )
+    )
+
+    # durée totale
+    duration = np.where(
+        df["produit"] == "emprunteur_immo",
+        rng.normal(12, 3, n),
+        np.where(
+            df["produit"] == "emprunteur_conso",
+            rng.normal(5, 2, n),
+            rng.normal(7, 2, n)
+        )
+    )
+
+    df["duration"] = np.clip(
+        duration,
+        1,
+        20
+    ).astype(int)
+
+    # âge du contrat
+    annee_ref = 2026
+
+    df["age_contrat"] = np.clip(
+        annee_ref - df["generation_contrat"],
+        0,
+        df["duration"]
+    )
+
+    # capital assuré
+    df["capital_assure"] = np.where(
+        df["produit"] == "emprunteur_immo",
+        rng.lognormal(12, 0.40, n),
+        np.where(
+            df["produit"] == "emprunteur_conso",
+            rng.lognormal(10, 0.50, n),
+            rng.lognormal(11, 0.50, n)
+        )
+    )
+
+    return df
+
+
+# =====================================================
+# EXPECTED FLOWS
+# =====================================================
+def compute_expected(df, rng):
+
+    prof_factor = df["profession"].map({
+        "cadre": 1.30,
+        "employe": 1.00,
+        "ouvrier": 0.90,
+        "independant": 1.40,
+        "retraite": 0.80
+    })
+
+    produit_factor = df["produit"].map({
+        "emprunteur_immo": 1.30,
+        "emprunteur_conso": 1.00,
+        "protection_individuelle": 1.10
+    })
+
+    prime = (
+        250
+        + 0.0008 * df["capital_assure"]
+        + 0.01 * df["revenu"]
+        + 8 * df["age"]
+    )
+
+    prime *= prof_factor
+    prime *= produit_factor
+
+    prime += rng.normal(
+        0,
+        70,
+        len(df)
+    )
+
+    prime = np.clip(prime, 200, None)
+
+    comm_rate = np.clip(
+        rng.normal(0.15, 0.03, len(df)),
+        0.05,
+        0.30
+    )
+
+    fee_rate = np.clip(
+        rng.normal(0.06, 0.02, len(df)),
+        0.02,
+        0.15
+    )
+
+    df["prime_expected"] = prime
+    df["commission_expected"] = prime * comm_rate
+    df["frais_expected"] = prime * fee_rate
+
+    freq = np.clip(
+        0.03
+        + 0.02 * (df["age"] > 55)
+        + 0.02 * (df["nb_enfants"] >= 3),
+        0.01,
+        0.20
+    )
+
+    nb_sin = rng.poisson(freq)
+
+    severite = rng.gamma(
+        shape=2,
+        scale=1500,
+        size=len(df)
+    )
+
+    df["sinistres_expected"] = (
+        nb_sin * severite
+    )
+
+    df["acquisition_cf"] = (
+        prime *
+        rng.uniform(0.02, 0.06, len(df))
+    )
+
+    return df
+
+
+# =====================================================
+# INCURRED
+# =====================================================
+def compute_incurred(df, rng):
+
+    df["prime_incurred"] = (
+        df["prime_expected"]
+        * rng.normal(1, 0.02, len(df))
+    )
+
+    df["commission_incurred"] = (
+        df["commission_expected"]
+        * rng.normal(1, 0.05, len(df))
+    )
+
+    df["frais_incurred"] = (
+        df["frais_expected"]
+        * rng.normal(1, 0.08, len(df))
+    )
+
+    df["sinistres_incurred"] = (
+        df["sinistres_expected"]
+        * rng.lognormal(0, 0.35, len(df))
+    )
+
+    return df
+
+
+# =====================================================
+# BBA
+# =====================================================
+def bba_engine(row, cfg):
+
+    r = cfg["discount_rate"]
+    lapse = cfg["lapse_rate"]
+
+    infl_f = cfg["inflation_fees"]
+    infl_c = cfg["inflation_claims"]
+
+    T = row["duration"]
+
+    pv_p = pv_c = pv_f = pv_s = pv_acq = 0
+    surv = 1.0
+
+    for t in range(1, T + 1):
+
+        surv *= (1 - lapse)
+        disc = (1 + r) ** (-t)
+
+        pv_p += row["prime_expected"] * surv * disc
+        pv_c += row["commission_expected"] * surv * disc
+        pv_f += (
+            row["frais_expected"]
+            * (1 + infl_f) ** t
+            * disc
+        )
+
+        pv_s += (
+            row["sinistres_expected"]
+            * (1 + infl_c) ** t
+            * disc
+        )
+
+        pv_acq += (
+            row["acquisition_cf"]
+            * disc
+        )
+
+    return pd.Series(
+        [pv_p, pv_c, pv_f, pv_s, pv_acq]
+    )
+
+
+def compute_bba(df, cfg):
+
+    cols = [
+        "pv_primes",
+        "pv_comm",
+        "pv_frais",
+        "pv_sin",
+        "pv_acq"
+    ]
+
+    df[cols] = df.apply(
+        lambda x: bba_engine(x, cfg),
+        axis=1
+    )
+
+    df["risk_adjustment"] = (
+        0.20
+        * df["pv_sin"]
+    )
+
+    df["csm"] = (
+        df["pv_primes"]
+        - df["pv_comm"]
+        - df["pv_frais"]
+        - df["pv_sin"]
+        - df["risk_adjustment"]
+        - df["pv_acq"]
+    )
+
+    df["csm"] = np.maximum(
+        df["csm"],
+        0
+    )
+
+    df["iacf_recovery"] = np.where(
+        df["pv_acq"] > 0,
+        df["pv_primes"] / df["pv_acq"],
+        np.nan
+    )
+
+    return df
+
+
+# =====================================================
+# COVERAGE UNITS + RELEASE
+# =====================================================
+def compute_release(df):
+
+    produit_factor = df["produit"].map({
+        "emprunteur_immo": 1.20,
+        "emprunteur_conso": 1.00,
+        "protection_individuelle": 1.10
+    })
+
+    df["coverage_unit_annual"] = (
+        df["capital_assure"]
+        * produit_factor
+    )
+
+    df["coverage_units_total"] = (
+        df["coverage_unit_annual"]
+        * df["duration"]
+    )
+
+    ratio = np.where(
+        df["duration"] > 0,
+        df["age_contrat"] / df["duration"],
+        0
+    )
+
+    ratio = np.clip(
+        ratio,
+        0,
+        1
+    )
+
+    df["csm_released"] = (
+        df["csm"]
+        * ratio
+    )
+
+    df["csm_remaining"] = (
+        df["csm"]
+        - df["csm_released"]
+    )
+
+    df["ra_released"] = (
+        df["risk_adjustment"]
+        * ratio
+    )
+
+    df["ra_remaining"] = (
+        df["risk_adjustment"]
+        - df["ra_released"]
+    )
+
+    return df
+
+
+# =====================================================
+# DATA QUALITY
+# =====================================================
+
+def inject_quality(df, rng, rate=0.12):
+
+    n = len(df)
+
+    # ===============================
+    # TAILLES DES ÉCHANTILLONS
+    # ===============================
+    miss = int(rate * 0.40 * n)
+    out = int(rate * 0.20 * n)
+    incoh = int(rate * 0.20 * n)
+    typo = int(rate * 0.10 * n)
+    dup = int(rate * 0.05 * n)
+
+    # ==================================================
+    # 1. DONNÉES MANQUANTES (MISSING VALUES)
+    # ==================================================
+
+    cols_missing = [
+        "revenu",
+        "profession",
+        "statut_marital",
+        "region",
+        "capital_assure",
+        "prime_incurred",
+        "commission_incurred",
+        "frais_incurred",
+        "sinistres_incurred",
+        "sinistres_expected",
+        "risk_adjustment",
+        "csm"
+    ]
+
+    for col in cols_missing:
+        idx = rng.choice(n, miss, replace=False)
+        df.loc[idx, col] = np.nan
+
+    # Missing conditionnels (plus réalistes)
+
+    idx = df[df["profession"] == "independant"].index
+    if len(idx) > 0:
+        idx = rng.choice(
+            idx,
+            size=min(int(0.30 * len(idx)), len(idx)),
+            replace=False
+        )
+        df.loc[idx, "revenu"] = np.nan
+
+    idx = df[df["age"] < 25].index
+    if len(idx) > 0:
+        idx = rng.choice(
+            idx,
+            size=min(int(0.20 * len(idx)), len(idx)),
+            replace=False
+        )
+        df.loc[idx, "statut_marital"] = np.nan
+
+    # ==================================================
+    # 2. OUTLIERS
+    # ==================================================
+
+    idx = rng.choice(n, out, replace=False)
+    df.loc[idx, "age"] = rng.choice(
+        [-10, 0, 130, 999],
+        len(idx)
+    )
+
+    idx = rng.choice(n, out, replace=False)
+    df.loc[idx, "revenu"] = (
+        df.loc[idx, "revenu"] *
+        rng.uniform(5, 20, len(idx))
+    )
+
+    idx = rng.choice(n, out, replace=False)
+    df.loc[idx, "capital_assure"] = (
+        df.loc[idx, "capital_assure"] *
+        rng.uniform(10, 50, len(idx))
+    )
+
+    # ==================================================
+    # 3. INCOHÉRENCES MÉTIER
+    # ==================================================
+
+    idx = rng.choice(n, incoh, replace=False)
+    df.loc[idx, "commission_expected"] = (
+        df.loc[idx, "prime_expected"] *
+        rng.uniform(1.2, 3.0, len(idx))
+    )
+
+    idx = rng.choice(n, incoh, replace=False)
+    df.loc[idx, "frais_expected"] *= -1
+
+    idx = rng.choice(n, incoh, replace=False)
+    df.loc[idx, "nb_enfants"] = rng.integers(
+        8,
+        15,
+        len(idx)
+    )
+
+    idx = rng.choice(n, incoh, replace=False)
+    df.loc[idx, "age_contrat"] = (
+        df.loc[idx, "duration"] +
+        rng.integers(1, 10, len(idx))
+    )
+
+    # ==================================================
+    # 4. TYPOS
+    # ==================================================
+
+    idx = rng.choice(n, typo, replace=False)
+    df.loc[idx, "region"] = rng.choice(
+        ["idf", "IDF ", "pariss", "Paris"],
+        len(idx)
+    )
+
+    idx = rng.choice(n, typo, replace=False)
+    df.loc[idx, "profession"] = rng.choice(
+        ["Cadre", "EMPLOYE", "indep", "Retraité"],
+        len(idx)
+    )
+
+    # ==================================================
+    # 5. INCOHÉRENCES IFRS 17
+    # ==================================================
+
+    idx = rng.choice(n, incoh, replace=False)
+    df.loc[idx, "csm"] *= -1
+
+    idx = rng.choice(n, incoh, replace=False)
+    df.loc[idx, "risk_adjustment"] *= 5
+
+    idx = rng.choice(n, incoh, replace=False)
+    df.loc[idx, "csm_released"] = (
+        df.loc[idx, "csm"] * 2
+    )
+
+    # ==================================================
+    # 6. DOUBLONS
+    # ==================================================
+
+    if dup > 0:
+        duplicate_rows = df.sample(
+            n=dup,
+            random_state=42
+        )
+        df = pd.concat(
+            [df, duplicate_rows],
+            ignore_index=True
+        )
+
+    # Score de qualité
+    df["missing_score"] = (
+        df.isna().sum(axis=1) /
+        len(df.columns)
+    )
+
+    df["has_issue"] = (
+        df["missing_score"] > 0
+    ).astype(int)
+
+    return df
+# =====================================================
+# EXPORT
+# =====================================================
+def export(df, meta, cfg):
+
+    os.makedirs(
+        cfg["output_dir"],
+        exist_ok=True
+    )
+
+    file_path = os.path.join(
+        cfg["output_dir"],
+        f"portfolio_{meta['run_id']}.csv"
+    )
+
+    df.to_csv(
+        file_path,
+        index=False
+    )
+
+    with open(
+        os.path.join(
+            cfg["output_dir"],
+            f"meta_{meta['run_id']}.json"
+        ),
+        "w"
+    ) as f:
+        json.dump(meta, f, indent=4)
+
+    return file_path
+
+
+# =====================================================
+# MAIN
+# =====================================================
+def main():
+
+    cfg = config()
+
+    rng = np.random.default_rng(
+        cfg["seed"]
+    )
+
+    meta = run_metadata()
+
+    df = build_base(
+        cfg["n"],
+        rng
+    )
+
+    df = compute_expected(df, rng)
+    df = compute_incurred(df, rng)
+    df = compute_bba(df, cfg)
+    df = compute_release(df)
+    df = inject_quality(
+        df,
+        rng,
+        cfg["data_quality_rate"]
+    )
+
+    file_path = export(
+        df,
+        meta,
+        cfg
+    )
+
+    print("\n==========================")
+    print("IFRS17 BBA SIMULATION DONE")
+    print("==========================")
+    print("Run :", meta["run_id"])
+    print("File :", file_path)
+    print(df.head())
+
+
+if __name__ == "__main__":
+    main()
