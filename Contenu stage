@@ -1,0 +1,371 @@
+Stage Découverte Assurance – Analyse de la Valeur Future des Contrats
+
+Problématique
+
+Quels sont les contrats qui génèrent le plus de valeur future pour l'assureur et comment la qualité des données influence-t-elle cette analyse ?
+
+---
+
+1. Contexte métier
+
+Avant toute analyse, répondre aux questions suivantes :
+
+Assurance
+
+- Comment un assureur gagne-t-il de l'argent ?
+- Qu'est-ce qu'une prime ?
+- Qu'est-ce qu'un sinistre ?
+- Pourquoi existe-t-il des commissions ?
+- Pourquoi existe-t-il des frais ?
+- Qu'est-ce qu'une provision ?
+
+IFRS 17
+
+- Que représente la CSM ?
+- Que représente le Risk Adjustment (RA) ?
+- Pourquoi actualise-t-on les flux futurs ?
+- Pourquoi projeter les primes et les sinistres ?
+
+Variables du jeu de données
+
+Identifier le rôle de chaque variable :
+
+Variable| Signification
+age| âge de l'assuré
+revenu| revenu annuel
+profession| profession
+statut_marital| situation familiale
+nb_enfants| nombre d'enfants
+produit| type de contrat
+capital_assure| montant couvert
+duration| durée totale
+age_contrat| ancienneté du contrat
+prime_expected| prime attendue
+sinistres_expected| sinistres attendus
+prime_incurred| prime réellement observée
+sinistres_incurred| sinistres réellement observés
+csm| valeur future du contrat
+risk_adjustment| marge de risque
+csm_released| CSM déjà reconnue
+csm_remaining| CSM restante
+iacf_recovery| récupération des coûts d'acquisition
+
+---
+
+2. Contrôle qualité des données
+
+Question 1
+
+Combien de lignes contient la base ?
+
+df.shape
+
+Question 2
+
+Combien de valeurs manquantes par variable ?
+
+df.isna().sum().sort_values(ascending=False)
+
+Question 3
+
+Quel pourcentage de données est manquant ?
+
+(df.isna().mean()*100).round(2)
+
+Question 4
+
+Existe-t-il des doublons ?
+
+df.duplicated().sum()
+
+Question 5
+
+Existe-t-il des contrats dupliqués ?
+
+df["contrat_id"].duplicated().sum()
+
+Question 6
+
+Existe-t-il des assurés dupliqués ?
+
+df["assure_id"].duplicated().sum()
+
+---
+
+3. Recherche d'anomalies métier
+
+Âges impossibles
+
+df[(df["age"] < 18) | (df["age"] > 100)]
+
+Revenus négatifs
+
+df[df["revenu"] < 0]
+
+Capital assuré nul
+
+df[df["capital_assure"] <= 0]
+
+Commissions supérieures aux primes
+
+df[
+    df["commission_expected"] >
+    df["prime_expected"]
+]
+
+Frais négatifs
+
+df[df["frais_expected"] < 0]
+
+CSM négatives
+
+df[df["csm"] < 0]
+
+Risk Adjustment négatif
+
+df[df["risk_adjustment"] < 0]
+
+Age contrat supérieur à la durée
+
+df[
+    df["age_contrat"] >
+    df["duration"]
+]
+
+Génération dans le futur
+
+df[
+    df["generation_contrat"] > 2026
+]
+
+Retraité de moins de 40 ans
+
+df[
+    (df["profession"]=="retraite")
+    &
+    (df["age"]<40)
+]
+
+---
+
+4. Analyse descriptive du portefeuille
+
+Répartition des produits
+
+df["produit"].value_counts()
+
+Prime moyenne
+
+df["prime_expected"].mean()
+
+Sinistre moyen
+
+df["sinistres_expected"].mean()
+
+CSM moyenne
+
+df["csm"].mean()
+
+Répartition par région
+
+df.groupby("region")[
+    "prime_expected"
+].sum()
+
+Répartition par profession
+
+df.groupby("profession")[
+    "csm"
+].mean()
+
+---
+
+5. Construction d'indicateurs financiers
+
+Loss Ratio
+
+df["loss_ratio"] = (
+    df["sinistres_incurred"] /
+    df["prime_incurred"]
+)
+
+Expense Ratio
+
+df["expense_ratio"] = (
+    (
+        df["commission_incurred"]
+        + df["frais_incurred"]
+    )
+    /
+    df["prime_incurred"]
+)
+
+Combined Ratio
+
+df["combined_ratio"] = (
+    df["loss_ratio"]
+    + df["expense_ratio"]
+)
+
+CSM sur Prime
+
+df["csm_ratio"] = (
+    df["csm"] /
+    df["prime_expected"]
+)
+
+RA sur Prime
+
+df["ra_ratio"] = (
+    df["risk_adjustment"] /
+    df["prime_expected"]
+)
+
+---
+
+6. Définir la valeur future
+
+Option 1
+
+df["future_value"] = (
+    df["csm"]
+    + df["risk_adjustment"]
+)
+
+Option 2
+
+df["future_value"] = (
+    df["pv_primes"]
+    - df["pv_sin"]
+)
+
+Question :
+
+Quels contrats créent le plus de valeur ?
+
+df.nlargest(
+    20,
+    "future_value"
+)
+
+---
+
+7. Segmentation des contrats
+
+Créer 3 groupes :
+
+df["segment_valeur"] = pd.qcut(
+    df["future_value"],
+    3,
+    labels=[
+        "Faible",
+        "Moyenne",
+        "Forte"
+    ]
+)
+
+Comparer :
+
+- âge ;
+- revenu ;
+- profession ;
+- produit ;
+- région ;
+- capital assuré.
+
+df.groupby(
+    "segment_valeur"
+).mean(numeric_only=True)
+
+---
+
+8. Impact de la qualité des données
+
+Créer deux populations :
+
+Contrats sans anomalie
+
+clean_df = df[
+    df["has_issue"] == 0
+]
+
+Contrats avec anomalie
+
+dirty_df = df[
+    df["has_issue"] == 1
+]
+
+Comparer :
+
+clean_df["future_value"].mean()
+dirty_df["future_value"].mean()
+
+Questions :
+
+- Les anomalies modifient-elles la valeur calculée ?
+- Les contrats pollués sont-ils plus difficiles à analyser ?
+- Les conclusions changent-elles après nettoyage ?
+
+---
+
+9. Machine Learning
+
+Objectif :
+
+Prédire la valeur future d'un contrat.
+
+from sklearn.ensemble import RandomForestRegressor
+
+Variables explicatives :
+
+- âge
+- revenu
+- capital assuré
+- durée
+- nombre d'enfants
+- produit
+
+Variable cible :
+
+future_value
+
+Questions :
+
+- Peut-on prédire la valeur ?
+- Quelles variables expliquent le plus la valeur ?
+
+Afficher ensuite :
+
+model.feature_importances_
+
+---
+
+10. Restitution Finale
+
+Présentation de 10 minutes :
+
+Partie 1
+
+Compréhension du portefeuille
+
+Partie 2
+
+Anomalies détectées
+
+Partie 3
+
+Impact qualité des données
+
+Partie 4
+
+Facteurs expliquant la valeur
+
+Partie 5
+
+Limites de l'étude
+
+Conclusion
+
+Répondre à la question initiale :
+
+Quels sont les contrats qui génèrent le plus de valeur future pour l'assureur et comment la qualité des données influence-t-elle cette analyse ?
