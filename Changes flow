@@ -1,0 +1,64 @@
+import plotly.graph_objects as go
+
+labels = [
+    "Résultat\nFrench\n100",
+    "PPNA",
+    "Best Estimate",
+    "Risk Adjustment",
+    "CSM",
+    "Discounting",
+    "Autres",
+    "Résultat\nIFRS17\n110"
+]
+
+source = [
+    0,0,0,0,0,0,      # French -> briques
+    1,2,3,4,5,6       # briques -> IFRS17
+]
+
+target = [
+    1,2,3,4,5,6,
+    7,7,7,7,7,7
+]
+
+value = [
+    18,12,6,8,5,4,
+    18,12,6,8,5,4
+]
+
+color = [
+    "green",
+    "red",
+    "green",
+    "red",
+    "green",
+    "orange",
+    "green",
+    "red",
+    "green",
+    "red",
+    "green",
+    "orange"
+]
+
+fig = go.Figure(go.Sankey(
+    node=dict(
+        pad=25,
+        thickness=20,
+        line=dict(color="black", width=0.5),
+        label=labels
+    ),
+    link=dict(
+        source=source,
+        target=target,
+        value=value,
+        color=color
+    )
+))
+
+fig.update_layout(
+    title="Passage Résultat French GAAP → IFRS17 Protection",
+    font_size=12
+)
+
+fig.show()
