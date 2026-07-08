@@ -1,0 +1,104 @@
+import plotly.graph_objects as go
+
+# -----------------------------
+# Données
+# -----------------------------
+start_value = 250
+
+contributions = [
+    ("PPNA", 18),
+    ("Best Estimate", -25),
+    ("Risk Adjustment", 8),
+    ("CSM", -15),
+    ("Discounting", 6),
+]
+
+end_value = start_value + sum(v for _, v in contributions)
+
+# -----------------------------
+# Figure
+# -----------------------------
+fig = go.Figure()
+
+# Résultat French
+fig.add_trace(go.Scatter(
+    x=[0],
+    y=[0],
+    mode="markers+text",
+    marker=dict(size=55, symbol="square", color="royalblue"),
+    text=[f"French<br>{start_value}"],
+    textposition="middle center",
+    hoverinfo="skip"
+))
+
+# Résultat IFRS17
+fig.add_trace(go.Scatter(
+    x=[10],
+    y=[0],
+    mode="markers+text",
+    marker=dict(size=55, symbol="square", color="darkblue"),
+    text=[f"IFRS17<br>{end_value}"],
+    textposition="middle center",
+    hoverinfo="skip"
+))
+
+# Position verticale des briques
+ys = [2,1,0,-1,-2]
+
+for (label,value), y in zip(contributions, ys):
+
+    color = "green" if value > 0 else "crimson"
+    width = max(2, abs(value)/4)
+
+    # Nom de la brique
+    fig.add_annotation(
+        x=5,
+        y=y,
+        text=f"{label}<br><b>{value:+}</b>",
+        showarrow=False,
+        font=dict(size=12,color=color)
+    )
+
+    # Flèche gauche -> brique
+    fig.add_annotation(
+        x=4.3,
+        y=y,
+        ax=0.5,
+        ay=0,
+        xref="x",
+        yref="y",
+        axref="x",
+        ayref="y",
+        arrowhead=3,
+        arrowsize=1,
+        arrowwidth=width,
+        arrowcolor=color
+    )
+
+    # Flèche brique -> droite
+    fig.add_annotation(
+        x=9.4,
+        y=0,
+        ax=5.7,
+        ay=y,
+        xref="x",
+        yref="y",
+        axref="x",
+        ayref="y",
+        arrowhead=3,
+        arrowsize=1,
+        arrowwidth=width,
+        arrowcolor=color
+    )
+
+fig.update_layout(
+    title="Contribution Flow Bridge - French GAAP vers IFRS17",
+    xaxis=dict(visible=False, range=[-1,11]),
+    yaxis=dict(visible=False, range=[-3,3]),
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    height=600,
+    showlegend=False
+)
+
+fig.show()
