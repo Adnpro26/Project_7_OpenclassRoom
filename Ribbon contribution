@@ -1,0 +1,17 @@
+df = pd.DataFrame({
+    "Brique": [
+        "PPNA",
+        "Best Estimate",
+        "Risk Adjustment",
+        "CSM",
+        "Discounting",
+        "Onerous"
+    ],
+    "Impact": [18, -25, 8, -15, 6, -4]
+})
+
+flow_bridge(
+    start_value=250,
+    dataframe=df,
+    end_label="IFRS17 Protection"
+)
