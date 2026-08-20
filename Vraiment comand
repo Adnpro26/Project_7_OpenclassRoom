@@ -1,0 +1,47 @@
+Sub Lister_Requetes_PowerQuery()
+
+    Dim ws As Worksheet
+    Dim q As WorkbookQuery
+    Dim ligne As Long
+
+    ' Créer ou récupérer la feuille Administration
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets("Administration")
+    On Error GoTo 0
+
+    If ws Is Nothing Then
+        Set ws = ThisWorkbook.Worksheets.Add
+        ws.Name = "Administration"
+    End If
+
+    ' Nettoyage
+    ws.Cells.Clear
+
+    ' En-têtes
+    ws.Range("A1").Value = "Inventaire Power Query"
+    ws.Range("A3").Value = "Nom de la requête"
+    ws.Range("B3").Value = "Type"
+    ws.Range("C3").Value = "Code M"
+
+    ligne = 4
+
+    ' Parcours des requêtes
+    For Each q In ThisWorkbook.Queries
+
+        ws.Cells(ligne, 1).Value = q.Name
+        ws.Cells(ligne, 2).Value = "Power Query"
+        ws.Cells(ligne, 3).Value = q.Formula
+
+        ligne = ligne + 1
+
+    Next q
+
+    ' Mise en forme
+    ws.Columns("A:B").AutoFit
+    ws.Columns("C").ColumnWidth = 80
+    ws.Rows("3:3").Font.Bold = True
+
+    MsgBox ligne - 4 & " requête(s) Power Query listée(s).", _
+           vbInformation, "Inventaire Power Query"
+
+End Sub
