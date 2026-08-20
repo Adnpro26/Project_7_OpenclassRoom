@@ -1,0 +1,89 @@
+Sub Lister_Requetes_PowerQuery()
+
+    Dim ws As Worksheet
+    Dim q As WorkbookQuery
+    Dim ligne As Long
+    Dim codeM As String
+    Dim source As String
+    Dim typeSource As String
+
+    ' Récupérer la feuille Administration
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets("Administration")
+    On Error GoTo 0
+
+    If ws Is Nothing Then
+        Set ws = ThisWorkbook.Worksheets.Add
+        ws.Name = "Administration"
+    End If
+
+    ' Nettoyage
+    ws.Cells.Clear
+
+    ' Titre
+    ws.Range("A1").Value = "INVENTAIRE POWER QUERY"
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A1").Font.Size = 16
+
+    ' En-têtes
+    ws.Range("A3").Value = "Nom de la requête"
+    ws.Range("B3").Value = "Type de source"
+    ws.Range("C3").Value = "Source détectée"
+    ws.Range("D3").Value = "Code M"
+
+    ws.Range("A3:D3").Font.Bold = True
+
+    ligne = 4
+
+    ' Parcours des requêtes
+    For Each q In ThisWorkbook.Queries
+
+        codeM = q.Formula
+
+        source = ""
+        typeSource = ""
+
+        ' Détection Excel CurrentWorkbook
+        If InStr(1, codeM, "Excel.CurrentWorkbook", vbTextCompare) > 0 Then
+            typeSource = "Table / Plage Excel"
+            source = "Excel.CurrentWorkbook()"
+
+        ' Détection fichier Excel
+        ElseIf InStr(1, codeM, "Excel.Workbook", vbTextCompare) > 0 Then
+            typeSource = "Fichier Excel"
+            source = "Excel.Workbook(...)"
+
+        ' Détection dossier
+        ElseIf InStr(1, codeM, "Folder.Files", vbTextCompare) > 0 Then
+            typeSource = "Dossier"
+            source = "Folder.Files(...)"
+
+        ' Détection CSV
+        ElseIf InStr(1, codeM, "Csv.Document", vbTextCompare) > 0 Then
+            typeSource = "CSV"
+            source = "Csv.Document(...)"
+
+        Else
+            typeSource = "Requête / calcul"
+            source = "Pas de source directe détectée"
+        End If
+
+        ws.Cells(ligne, 1).Value = q.Name
+        ws.Cells(ligne, 2).Value = typeSource
+        ws.Cells(ligne, 3).Value = source
+        ws.Cells(ligne, 4).Value = codeM
+
+        ligne = ligne + 1
+
+    Next q
+
+    ' Mise en forme
+    ws.Columns("A:C").AutoFit
+    ws.Columns("D").ColumnWidth = 80
+
+    ws.Range("A3:D3").AutoFilter
+
+    MsgBox ligne - 4 & " requête(s) analysée(s).", _
+           vbInformation, "Inventaire Power Query"
+
+End Sub
