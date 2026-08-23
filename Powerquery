@@ -1,0 +1,52 @@
+let
+    Source = Q_Vue_Harmonisée,
+
+    ReglesRT = Table.SelectRows(
+        Q_Règles_Non_Calculables,
+        each [Indicateur cible] = "Résultat Technique"
+    ),
+
+    Jointure = Table.NestedJoin(
+        Source,
+        {"Indicateurs"},
+        ReglesRT,
+        {"Indicateur source"},
+        "Regles",
+        JoinKind.Inner
+    ),
+
+    Developper = Table.ExpandTableColumn(
+        Jointure,
+        "Regles",
+        {"Indicateur cible", "Coefficient"},
+        {"Indicateur cible", "Coefficient"}
+    ),
+
+    MontantCalcule = Table.AddColumn(
+        Developper,
+        "Montant_Calcule",
+        each [Total Amount] * [Coefficient],
+        type number
+    ),
+
+    ResultatTechnique = Table.Group(
+        MontantCalcule,
+        {"Code Group IFRS17", "Exercice", "Generation"},
+        {
+            {
+                "Total Amount",
+                each List.Sum([Montant_Calcule]),
+                type number
+            }
+        }
+    ),
+
+    AjoutIndicateur = Table.AddColumn(
+        ResultatTechnique,
+        "Indicateurs",
+        each "Résultat Technique",
+        type text
+    )
+
+in
+    AjoutIndicateur
