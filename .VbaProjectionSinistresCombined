@@ -1,0 +1,207 @@
+Sub TraiterDonneesReelles_ChainLadder_Securise()
+    Dim wb As Workbook
+    Dim wsData As Worksheet, wsHyp As Worksheet, wsSP As Worksheet, wsFrais As Worksheet, wsRest As Worksheet
+    Dim lastRow As Long, i As Integer, j As Integer
+    Dim genStart As Integer, genEnd As Integer, gen As Integer
+    Dim colCur As String, colPrev As String
+    Dim numGens As Integer, endRowRest As Long
+    Dim rowIdx As Long
+    
+    Set wb = ActiveWorkbook
+    
+    On Error Resume Next
+    Set wsData = wb.Worksheets("0_Donnees_Brutes")
+    On Error GoTo 0
+    
+    If wsData Is Nothing Then
+        MsgBox "L'onglet '0_Donnees_Brutes' n'a pas été trouvé.", vbCritical
+        Exit Sub
+    End If
+
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    ' Nettoyage des anciens onglets calculés
+    Dim ws As Worksheet
+    For Each ws In wb.Worksheets
+        If ws.Name <> "0_Donnees_Brutes" Then ws.Delete
+    Next ws
+    Application.DisplayAlerts = True
+    
+    ' Création des onglets
+    Set wsHyp = wb.Worksheets.Add(After:=wsData): wsHyp.Name = "1_Hypotheses_et_Calibrage"
+    Set wsSP = wb.Worksheets.Add(After:=wsHyp): wsSP.Name = "2_Triangle_SP_Pur"
+    Set wsFrais = wb.Worksheets.Add(After:=wsSP): wsFrais.Name = "3_Grille_Frais"
+    Set wsRest = wb.Worksheets.Add(After:=wsFrais): wsRest.Name = "4_Restitution_et_Diagnostic"
+    
+    ' Détermination dynamique du périmètre de générations
+    lastRow = wsData.Cells(wsData.Rows.Count, "A").End(xlUp).Row
+    genStart = Application.WorksheetFunction.Min(wsData.Range("A2:A" & lastRow))
+    genEnd = Application.WorksheetFunction.Max(wsData.Range("A2:A" & lastRow))
+    numGens = genEnd - genStart + 1
+    endRowRest = 2 + numGens
+
+    ' =========================================================
+    ' 1. ONGLET 1 : HYPOTHÈSES & CALIBRAGE DYNAMIQUE
+    ' =========================================================
+    With wsHyp
+        .Range("A1").Value = "INDICATEUR / RATIO GLOBAL": .Range("B1").Value = "FORMULE DE CALCUL": .Range("C1").Value = "VALEUR"
+        .Range("A1:C1").Font.Bold = True
+        
+        .Range("A2").Value = "Total Primes Acquises Historiques": .Range("B2").Value = "Somme Données Brutes": .Range("C2").Formula = "=SUM('0_Donnees_Brutes'!D2:D" & lastRow & ")"
+        .Range("A3").Value = "Total Sinistres Observés": .Range("B3").Value = "Somme Données Brutes": .Range("C3").Formula = "=SUM('0_Donnees_Brutes'!E2:E" & lastRow & ")"
+        .Range("A4").Value = "Total Commissions": .Range("B4").Value = "Somme Données Brutes": .Range("C4").Formula = "=SUM('0_Donnees_Brutes'!F2:F" & lastRow & ")"
+        .Range("A5").Value = "Total Frais Admin": .Range("B5").Value = "Somme Données Brutes": .Range("C5").Formula = "=SUM('0_Donnees_Brutes'!G2:G" & lastRow & ")"
+        .Range("A6").Value = "Total Frais Gestion Sinistres (FGS)": .Range("B6").Value = "Somme Données Brutes": .Range("C6").Formula = "=SUM('0_Donnees_Brutes'!H2:H" & lastRow & ")"
+        .Range("A7").Value = "Prime Moyenne par Génération": .Range("B7").Value = "C2 / Nb Générations": .Range("C7").Formula = "=C2 / " & numGens
+        
+        .Range("F5").Value = "Paramètres de Structure Calibrés": .Range("G5").Value = "Valeur Extraite des Données"
+        .Range("F5:G5").Font.Bold = True
+        .Range("F6").Value = "Ratio Commissions Total": .Range("G6").Formula = "=C4/C2"
+        .Range("F7").Value = "Ratio Admin Total (Fixe)": .Range("G7").Formula = "=C5/C2"
+        .Range("F8").Value = "Ratio FGS Total (Variable)": .Range("G8").Formula = "=C6/C2"
+        .Range("F10").Value = "Taux de Coûts Fixes (Calculé)": .Range("G10").Formula = "=(C4+C5)/C2"
+        .Range("F10:G10").Font.Bold = True
+        
+        .Range("C2:C7").NumberFormat = "#,##0 €"
+        .Range("G6:G10").NumberFormat = "0.00%"
+        .Columns("A:G").AutoFit
+    End With
+
+    ' =========================================================
+    ' 2. ONGLET 2 : TRIANGLE S/P PUR (CHAIN-LADDER & PLANCHER MAX(0;...))
+    ' =========================================================
+    With wsSP
+        .Range("A1").Value = "TRIANGLE S/P PUR (PROJECTION CHAIN-LADDER ET SÉCURISATION MAX(0;...))"
+        .Range("A2").Value = "Génération"
+        For j = 1 To 15: .Cells(2, j + 1).Value = "Y" & j: Next j
+        .Range("A2:P2").Font.Bold = True
+        
+        ' Ligne de cadence moyenne historique (sert de base de projection aux link ratios)
+        .Cells(numGens + 3, 1).Value = "Cadence Cumulée Moyenne"
+        .Cells(numGens + 3, 1).Font.Bold = True
+        For j = 1 To 15
+            .Cells(numGens + 3, j + 1).Formula = "=AVERAGE(" & Split(.Cells(3, j + 1).Address, "$")(1) & "3:" & Split(.Cells(endRowRest, j + 1).Address, "$")(1) & endRowRest & ")"
+        Next j
+
+        ' Remplissage : Données réelles vs Projection sécurisée
+        For i = 0 To (numGens - 1)
+            gen = genStart + i
+            .Cells(i + 3, 1).Value = gen
+            For j = 1 To 15
+                colCur = Split(.Cells(1, j + 1).Address, "$")(1)
+                colPrev = Split(.Cells(1, j).Address, "$")(1)
+                
+                If (gen + j - 1) <= genEnd Then
+                    ' 1. Donnée Réelle Observée
+                    .Cells(i + 3, j + 1).Formula = "=SUMIFS('0_Donnees_Brutes'!$E:$E, '0_Donnees_Brutes'!$A:$A, $A" & (i + 3) & ", '0_Donnees_Brutes'!$C:$C, """ & "Y" & j & """) / SUMIFS('0_Donnees_Brutes'!$D:$D, '0_Donnees_Brutes'!$A:$A, $A" & (i + 3) & ", '0_Donnees_Brutes'!$C:$C, ""Y1"")"
+                Else
+                    ' 2. Projection Chain-Ladder : S/P(N-1) * (Moyenne Y_j / Moyenne Y_j-1)
+                    ' Protection contre les valeurs négatives via MAX(0; ...) et division par 0 via IFERROR
+                    .Cells(i + 3, j + 1).Formula = "=MAX(0, " & colPrev & (i + 3) & " * IFERROR(" & colCur & "$" & (numGens + 3) & " / " & colPrev & "$" & (numGens + 3) & ", 1))"
+                End If
+            Next j
+        Next i
+        
+        .Range("B3:P" & (numGens + 3)).NumberFormat = "0.00%"
+        .Columns("A:P").AutoFit
+    End With
+
+    ' =========================================================
+    ' 3. ONGLET 3 : GRILLE DE FRAIS
+    ' =========================================================
+    With wsFrais
+        .Range("A1").Value = "PROJECTION DE LA GRILLE DE FRAIS PAR MATURITÉ"
+        .Range("A2").Value = "Nature des Frais"
+        For j = 1 To 15: .Cells(2, j + 1).Value = "Y" & j: Next j
+        .Range("A2:P2").Font.Bold = True
+        
+        .Range("A3").Value = "Commissions (Lissées)"
+        For j = 1 To 15: .Cells(3, j + 1).Formula = "='1_Hypotheses_et_Calibrage'!$G$6 / 15": Next j
+        
+        .Range("A4").Value = "Frais d'Administration (Lissés)"
+        For j = 1 To 15: .Cells(4, j + 1).Formula = "='1_Hypotheses_et_Calibrage'!$G$7 / 15": Next j
+        
+        .Range("A5").Value = "Frais Gestion Sinistres (Cadence S/P)"
+        .Cells(5, 2).Formula = "='1_Hypotheses_et_Calibrage'!$G$8 * ('2_Triangle_SP_Pur'!B" & (numGens + 3) & " / '2_Triangle_SP_Pur'!P" & (numGens + 3) & ")"
+        For j = 2 To 15
+            colCur = Split(.Cells(1, j + 1).Address, "$")(1)
+            colPrev = Split(.Cells(1, j).Address, "$")(1)
+            .Cells(5, j + 1).Formula = "='1_Hypotheses_et_Calibrage'!$G$8 * (('2_Triangle_SP_Pur'!" & colCur & (numGens + 3) & " - '2_Triangle_SP_Pur'!" & colPrev & (numGens + 3) & ") / '2_Triangle_SP_Pur'!P" & (numGens + 3) & ")"
+        Next j
+        
+        .Range("A6").Value = "TOTAL RATIO FRAIS"
+        .Range("A6").Font.Bold = True
+        For j = 1 To 15
+            .Cells(6, j + 1).Formula = "=SUM(" & Split(.Cells(3, j + 1).Address, "$")(1) & "3:" & Split(.Cells(5, j + 1).Address, "$")(1) & "5)"
+            .Cells(6, j + 1).Font.Bold = True
+        Next j
+        
+        .Range("B3:P6").NumberFormat = "0.00%"
+        .Columns("A:P").AutoFit
+    End With
+
+    ' =========================================================
+    ' 4. ONGLET 4 : RESTITUTION, DIAGNOSTIC & GRAPHIQUES DYNAMIQUES
+    ' =========================================================
+    With wsRest
+        .Range("A1").Value = "DÉCOMPOSITION ANALYTIQUE 100% DYNAMIQUE"
+        .Range("A2:E2").Value = Array("Génération", "Prime Y1 (Volume)", "Composante Intrinsèque (Réelle)", "Effet Dilution Volume", "Combined Ratio Ultime (Y15)")
+        .Range("A2:E2").Font.Bold = True
+        
+        For i = 0 To (numGens - 1)
+            gen = genStart + i
+            rowIdx = i + 3
+            .Cells(rowIdx, 1).Value = gen
+            .Cells(rowIdx, 2).Formula = "=SUMIFS('0_Donnees_Brutes'!$D:$D, '0_Donnees_Brutes'!$A:$A, " & gen & ", '0_Donnees_Brutes'!$C:$C, ""Y1"")"
+            .Cells(rowIdx, 3).Formula = "=('2_Triangle_SP_Pur'!P" & (numGens + 3) & " * (1 - '1_Hypotheses_et_Calibrage'!$G$8)) + '1_Hypotheses_et_Calibrage'!$G$10"
+            .Cells(rowIdx, 4).Formula = "=('2_Triangle_SP_Pur'!P" & rowIdx & " - '2_Triangle_SP_Pur'!P" & (numGens + 3) & ") * ('1_Hypotheses_et_Calibrage'!$C$7 / B" & rowIdx & ")"
+            .Cells(rowIdx, 5).Formula = "='2_Triangle_SP_Pur'!P" & rowIdx & " + '3_Grille_Frais'!P6"
+        Next i
+        
+        .Range("B3:B" & endRowRest).NumberFormat = "#,##0 €"
+        .Range("C3:E" & endRowRest).NumberFormat = "0.00%"
+        .Columns("A:E").AutoFit
+        
+        ' ---------------------------------------------------------
+        ' GRAPHIQUE 1 : VOLUME VS COMBINED RATIO
+        ' ---------------------------------------------------------
+        Dim chartObj1 As ChartObject
+        Dim chart1 As Chart
+        Set chartObj1 = .ChartObjects.Add(Left:=380, Top:=20, Width:=500, Height:=280)
+        Set chart1 = chartObj1.Chart
+        
+        chart1.ChartType = xlColumnClustered
+        chart1.SetSourceData Source:=.Range("A2:B" & endRowRest)
+        chart1.HasTitle = True
+        chart1.ChartTitle.Text = "Volume de Primes & Combined Ratio Ultime par Génération"
+        
+        With chart1.SeriesCollection.NewSeries
+            .Name = wsRest.Range("E2").Value
+            .Values = wsRest.Range("E3:E" & endRowRest)
+            .XValues = wsRest.Range("A3:A" & endRowRest)
+            .ChartType = xlLine
+            .AxisGroup = xlSecondary
+        End With
+        
+        chart1.Axes(xlValue, xlSecondary).TickLabels.NumberFormat = "0.0%"
+
+        ' ---------------------------------------------------------
+        ' GRAPHIQUE 2 : DÉCOMPOSITION DU RATIO (EMPILÉ)
+        ' ---------------------------------------------------------
+        Dim chartObj2 As ChartObject
+        Dim chart2 As Chart
+        Set chartObj2 = .ChartObjects.Add(Left:=380, Top:=320, Width:=500, Height:=280)
+        Set chart2 = chartObj2.Chart
+        
+        chart2.ChartType = xlColumnStacked
+        chart2.SetSourceData Source:=.Range("C2:D" & endRowRest)
+        chart2.SeriesCollection(1).XValues = wsRest.Range("A3:A" & endRowRest)
+        chart2.HasTitle = True
+        chart2.ChartTitle.Text = "Décomposition : Part Intrinsèque vs Effet Dilution Volume"
+        chart2.Axes(xlValue).TickLabels.NumberFormat = "0.0%"
+    End With
+
+    Application.ScreenUpdating = True
+    MsgBox "Modèle mis à jour : Chain-Ladder appliqué avec sécurité MAX(0; ...) et IFERROR !", vbInformation
+End Sub
