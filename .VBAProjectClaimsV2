@@ -1,0 +1,505 @@
+Option Explicit
+
+'============================================================
+' PARAMETRES
+'============================================================
+
+Const COL_GENERATION As Long = 1   ' A
+Const COL_MATURITE As Long = 3     ' C
+Const COL_PRIMES As Long = 4       ' D
+Const COL_SINISTRES As Long = 5    ' E
+
+Const COL_AGE As Long = 6          ' F
+Const COL_SIN_CUMUL As Long = 7    ' G
+Const COL_SP_OBS As Long = 8       ' H
+Const COL_SP_PROJ As Long = 9      ' I
+Const COL_SP_FINAL As Long = 10    ' J
+Const COL_STATUT As Long = 11      ' K
+
+
+'============================================================
+' PROCEDURE PRINCIPALE
+'============================================================
+
+Sub Calcul_SP_V1()
+
+    Dim ws As Worksheet
+    Set ws = ActiveSheet
+
+    Dim derniereLigne As Long
+    derniereLigne = ws.Cells(ws.Rows.Count, COL_MATURITE).End(xlUp).Row
+
+    '--------------------------------------------------------
+    ' ETAPE 1 : Creation des en-tetes
+    '--------------------------------------------------------
+
+    ws.Cells(1, COL_AGE).Value = "Age"
+    ws.Cells(1, COL_SIN_CUMUL).Value = "Sinistres cumulés"
+    ws.Cells(1, COL_SP_OBS).Value = "S/P observé"
+    ws.Cells(1, COL_SP_PROJ).Value = "S/P projeté"
+    ws.Cells(1, COL_SP_FINAL).Value = "S/P final"
+    ws.Cells(1, COL_STATUT).Value = "Statut"
+
+
+    '--------------------------------------------------------
+    ' ETAPE 2 : Extraction de l'age
+    '
+    ' Y1 -> 1
+    ' Y2 -> 2
+    ' Y15 -> 15
+    '--------------------------------------------------------
+
+    Dim i As Long
+    Dim maturite As String
+
+    For i = 2 To derniereLigne
+
+        maturite = Trim(UCase(ws.Cells(i, COL_MATURITE).Value))
+
+        If Left(maturite, 1) = "Y" Then
+
+            If IsNumeric(Mid(maturite, 2)) Then
+
+                ws.Cells(i, COL_AGE).Value = _
+                    CLng(Mid(maturite, 2))
+
+            End If
+
+        End If
+
+    Next i
+
+
+    '--------------------------------------------------------
+    ' ETAPE 3 : Sinistres cumulés
+    '--------------------------------------------------------
+
+    Dim generation As Variant
+    Dim cumul As Double
+    Dim generationPrecedente As Variant
+
+    generationPrecedente = ""
+
+    For i = 2 To derniereLigne
+
+        generation = ws.Cells(i, COL_GENERATION).Value
+
+        ' Nouvelle génération
+        If generation <> generationPrecedente Then
+
+            cumul = 0
+            generationPrecedente = generation
+
+        End If
+
+        ' Si un sinistre est renseigné
+        If IsNumeric(ws.Cells(i, COL_SINISTRES).Value) _
+           And ws.Cells(i, COL_SINISTRES).Value <> "" Then
+
+            cumul = cumul + ws.Cells(i, COL_SINISTRES).Value
+
+            ws.Cells(i, COL_SIN_CUMUL).Value = cumul
+
+        Else
+
+            ws.Cells(i, COL_SIN_CUMUL).Value = ""
+
+        End If
+
+    Next i
+
+
+    '--------------------------------------------------------
+    ' ETAPE 4 : Calcul du S/P observé
+    '
+    ' Hypothese :
+    ' le denominateur est la prime Y1 de la generation
+    '--------------------------------------------------------
+
+    Dim primeY1 As Double
+    Dim age As Long
+
+    generationPrecedente = ""
+
+    For i = 2 To derniereLigne
+
+        generation = ws.Cells(i, COL_GENERATION).Value
+
+        ' Nouvelle génération :
+        ' recherche de la prime Y1
+        If generation <> generationPrecedente Then
+
+            primeY1 = TrouverPrimeY1( _
+                        ws, _
+                        generation, _
+                        derniereLigne)
+
+            generationPrecedente = generation
+
+        End If
+
+        age = ws.Cells(i, COL_AGE).Value
+
+        ' S/P uniquement si le sinistre est observé
+        If ws.Cells(i, COL_SIN_CUMUL).Value <> "" _
+           And primeY1 <> 0 Then
+
+            ws.Cells(i, COL_SP_OBS).Value = _
+                ws.Cells(i, COL_SIN_CUMUL).Value / primeY1
+
+            ws.Cells(i, COL_STATUT).Value = "OBS"
+
+        Else
+
+            ws.Cells(i, COL_SP_OBS).Value = ""
+            ws.Cells(i, COL_STATUT).Value = ""
+
+        End If
+
+    Next i
+
+
+    '--------------------------------------------------------
+    ' ETAPE 5 : CALIBRATION DU S/P MOYEN PAR AGE
+    '--------------------------------------------------------
+
+    Dim ligneCalib As Long
+
+    ligneCalib = 1
+
+    ws.Cells(ligneCalib, 13).Value = "Age"
+    ws.Cells(ligneCalib, 14).Value = "S/P moyen"
+    ws.Cells(ligneCalib, 15).Value = "Nb observations"
+    ws.Cells(ligneCalib, 16).Value = "Cadence"
+
+
+    Dim ageMax As Long
+    ageMax = Application.WorksheetFunction.Max( _
+                ws.Range(ws.Cells(2, COL_AGE), _
+                         ws.Cells(derniereLigne, COL_AGE)))
+
+
+    Dim sommeSP As Double
+    Dim nbObs As Long
+    Dim spMoyenPrecedent As Double
+    Dim spMoyen As Double
+
+    Dim a As Long
+
+    For a = 1 To ageMax
+
+        sommeSP = 0
+        nbObs = 0
+
+        For i = 2 To derniereLigne
+
+            If ws.Cells(i, COL_AGE).Value = a Then
+
+                If IsNumeric(ws.Cells(i, COL_SP_OBS).Value) Then
+
+                    sommeSP = sommeSP + _
+                              ws.Cells(i, COL_SP_OBS).Value
+
+                    nbObs = nbObs + 1
+
+                End If
+
+            End If
+
+        Next i
+
+        ligneCalib = ligneCalib + 1
+
+        ws.Cells(ligneCalib, 13).Value = a
+        ws.Cells(ligneCalib, 15).Value = nbObs
+
+        If nbObs > 0 Then
+
+            spMoyen = sommeSP / nbObs
+
+            ws.Cells(ligneCalib, 14).Value = spMoyen
+
+            '------------------------------------------------
+            ' Cadence :
+            '
+            ' Y2 / Y1
+            ' Y3 / Y2
+            ' etc.
+            '------------------------------------------------
+
+            If a = 1 Then
+
+                ws.Cells(ligneCalib, 16).Value = ""
+
+            ElseIf spMoyenPrecedent <> 0 Then
+
+                ws.Cells(ligneCalib, 16).Value = _
+                    spMoyen / spMoyenPrecedent
+
+            End If
+
+            spMoyenPrecedent = spMoyen
+
+        End If
+
+    Next a
+
+
+    '--------------------------------------------------------
+    ' ETAPE 6 : PROJECTION DU S/P
+    '--------------------------------------------------------
+
+    Dim derniereObservation As Long
+    Dim spPrecedent As Double
+    Dim cadence As Double
+    Dim ligneCadence As Long
+
+    generationPrecedente = ""
+
+    For i = 2 To derniereLigne
+
+        generation = ws.Cells(i, COL_GENERATION).Value
+
+        '----------------------------------------------------
+        ' Nouvelle génération
+        '----------------------------------------------------
+
+        If generation <> generationPrecedente Then
+
+            generationPrecedente = generation
+
+            ' Recherche de la dernière observation
+            derniereObservation = _
+                TrouverDernierAgeObserve( _
+                    ws, _
+                    generation, _
+                    derniereLigne)
+
+            If derniereObservation > 0 Then
+
+                spPrecedent = _
+                    TrouverSPObserve( _
+                        ws, _
+                        generation, _
+                        derniereObservation, _
+                        derniereLigne)
+
+            End If
+
+        End If
+
+
+        age = ws.Cells(i, COL_AGE).Value
+
+
+        '----------------------------------------------------
+        ' Si l'âge est après la dernière observation
+        '----------------------------------------------------
+
+        If age > derniereObservation _
+           And derniereObservation > 0 Then
+
+            ligneCadence = TrouverLigneAgeCalibration( _
+                                ws, _
+                                age, _
+                                ageMax)
+
+            If ligneCadence > 0 Then
+
+                If IsNumeric(ws.Cells(ligneCadence, 16).Value) Then
+
+                    cadence = ws.Cells(ligneCadence, 16).Value
+
+                    '----------------------------------------
+                    ' Projection séquentielle
+                    '
+                    ' SP(Y4) = SP(Y3) × cadence Y3->Y4
+                    ' SP(Y5) = SP(Y4) × cadence Y4->Y5
+                    '----------------------------------------
+
+                    spPrecedent = spPrecedent * cadence
+
+                    ws.Cells(i, COL_SP_PROJ).Value = spPrecedent
+                    ws.Cells(i, COL_SP_FINAL).Value = spPrecedent
+                    ws.Cells(i, COL_STATUT).Value = "PROJ"
+
+                End If
+
+            End If
+
+        Else
+
+            '------------------------------------------------
+            ' Observation réelle
+            '------------------------------------------------
+
+            If IsNumeric(ws.Cells(i, COL_SP_OBS).Value) Then
+
+                ws.Cells(i, COL_SP_FINAL).Value = _
+                    ws.Cells(i, COL_SP_OBS).Value
+
+            End If
+
+        End If
+
+    Next i
+
+
+    '--------------------------------------------------------
+    ' MISE EN FORME
+    '--------------------------------------------------------
+
+    ws.Range( _
+        ws.Cells(2, COL_SP_OBS), _
+        ws.Cells(derniereLigne, COL_SP_FINAL) _
+    ).NumberFormat = "0.0%"
+
+    ws.Range( _
+        ws.Cells(2, 14), _
+        ws.Cells(ageMax + 1, 14) _
+    ).NumberFormat = "0.0%"
+
+    ws.Range( _
+        ws.Cells(2, 16), _
+        ws.Cells(ageMax + 1, 16) _
+    ).NumberFormat = "0.000"
+
+    ws.Columns("A:P").AutoFit
+
+    MsgBox "Calcul S/P terminé.", vbInformation
+
+End Sub
+
+
+'============================================================
+' RECHERCHE DE LA PRIME Y1
+'============================================================
+
+Function TrouverPrimeY1( _
+    ws As Worksheet, _
+    generation As Variant, _
+    derniereLigne As Long) As Double
+
+    Dim i As Long
+
+    For i = 2 To derniereLigne
+
+        If ws.Cells(i, COL_GENERATION).Value = generation Then
+
+            If ws.Cells(i, COL_AGE).Value = 1 Then
+
+                If IsNumeric(ws.Cells(i, COL_PRIMES).Value) Then
+
+                    TrouverPrimeY1 = _
+                        ws.Cells(i, COL_PRIMES).Value
+
+                    Exit Function
+
+                End If
+
+            End If
+
+        End If
+
+    Next i
+
+    TrouverPrimeY1 = 0
+
+End Function
+
+
+'============================================================
+' DERNIER AGE OBSERVE
+'============================================================
+
+Function TrouverDernierAgeObserve( _
+    ws As Worksheet, _
+    generation As Variant, _
+    derniereLigne As Long) As Long
+
+    Dim i As Long
+    Dim age As Long
+
+    TrouverDernierAgeObserve = 0
+
+    For i = 2 To derniereLigne
+
+        If ws.Cells(i, COL_GENERATION).Value = generation Then
+
+            If IsNumeric(ws.Cells(i, COL_AGE).Value) _
+               And IsNumeric(ws.Cells(i, COL_SP_OBS).Value) Then
+
+                age = ws.Cells(i, COL_AGE).Value
+
+                If age > TrouverDernierAgeObserve Then
+                    TrouverDernierAgeObserve = age
+                End If
+
+            End If
+
+        End If
+
+    Next i
+
+End Function
+
+
+'============================================================
+' RECUPERATION DU DERNIER S/P OBSERVE
+'============================================================
+
+Function TrouverSPObserve( _
+    ws As Worksheet, _
+    generation As Variant, _
+    ageRecherche As Long, _
+    derniereLigne As Long) As Double
+
+    Dim i As Long
+
+    For i = 2 To derniereLigne
+
+        If ws.Cells(i, COL_GENERATION).Value = generation _
+           And ws.Cells(i, COL_AGE).Value = ageRecherche Then
+
+            If IsNumeric(ws.Cells(i, COL_SP_OBS).Value) Then
+
+                TrouverSPObserve = _
+                    ws.Cells(i, COL_SP_OBS).Value
+
+                Exit Function
+
+            End If
+
+        End If
+
+    Next i
+
+End Function
+
+
+'============================================================
+' RECHERCHE DE LA LIGNE DE CALIBRATION
+'============================================================
+
+Function TrouverLigneAgeCalibration( _
+    ws As Worksheet, _
+    ageRecherche As Long, _
+    ageMax As Long) As Long
+
+    Dim i As Long
+
+    For i = 2 To ageMax + 1
+
+        If ws.Cells(i, 13).Value = ageRecherche Then
+
+            TrouverLigneAgeCalibration = i
+
+            Exit Function
+
+        End If
+
+    Next i
+
+    TrouverLigneAgeCalibration = 0
+
+End Function
