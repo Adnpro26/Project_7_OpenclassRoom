@@ -1,0 +1,591 @@
+# -*- coding: utf-8 -*-
+
+"""
+FORMULA DISCOVERY ENGINE - V1
+Recherche automatique de relations mathématiques
+dans une base IFRS 17 structurée :
+
+Generation | Indicateur | Numéro du run | Montant
+
+Exemples de relations recherchées :
+
+A + B = C
+A - B = C
+A + B - C = D
+A - B - C = D
+
+et relations entre runs :
+
+CSM_Clôture = CSM_Ouverture + mouvements
+"""
+
+import pandas as pd
+import numpy as np
+import itertools
+import os
+import math
+import re
+
+
+# ============================================================
+# 1. PARAMETRES
+# ============================================================
+
+INPUT_FILE = r"C:\MON_DOSSIER\mes_donnees.xlsx"
+SHEET_NAME = "Data"
+
+OUTPUT_FILE = r"C:\MON_DOSSIER\formula_discovery_results.xlsx"
+
+COL_GENERATION = "Generation"
+COL_INDICATOR = "Indicateur"
+COL_RUN = "Numéro du run"
+COL_VALUE = "Montant"
+
+
+# Nombre maximum de variables dans une formule
+# 2 = A+B=C
+# 3 = A+B-C=D
+MAX_TERMS = 3
+
+# Tolérance absolue minimale
+ABS_TOLERANCE = 0.01
+
+# Tolérance relative
+REL_TOLERANCE = 0.001       # 0,1 %
+
+# Nombre minimum d'observations communes
+MIN_OBSERVATIONS = 10
+
+# Couverture minimale
+MIN_COVERAGE = 0.90
+
+
+# ============================================================
+# 2. CHARGEMENT
+# ============================================================
+
+print("Chargement du fichier...")
+
+df = pd.read_excel(
+    INPUT_FILE,
+    sheet_name=SHEET_NAME
+)
+
+print("Nombre de lignes :", len(df))
+
+# Nettoyage des noms de colonnes
+df.columns = [str(c).strip() for c in df.columns]
+
+required = [
+    COL_GENERATION,
+    COL_INDICATOR,
+    COL_RUN,
+    COL_VALUE
+]
+
+for col in required:
+    if col not in df.columns:
+        raise ValueError(
+            "Colonne absente : " + col
+        )
+
+
+# ============================================================
+# 3. NETTOYAGE DES DONNEES
+# ============================================================
+
+df[COL_VALUE] = pd.to_numeric(
+    df[COL_VALUE],
+    errors="coerce"
+)
+
+df = df.dropna(
+    subset=[
+        COL_GENERATION,
+        COL_INDICATOR,
+        COL_RUN,
+        COL_VALUE
+    ]
+)
+
+print("Lignes après nettoyage :", len(df))
+
+
+# ============================================================
+# 4. CREATION D'UN NOM UNIQUE POUR CHAQUE VARIABLE
+# ============================================================
+
+# Une variable est définie par :
+#
+# Indicateur + Run
+#
+# Exemple :
+#
+# CSM | Ouverture
+# CSM | Clôture
+# RA  | Ouverture
+# RA  | Clôture
+
+df["_VARIABLE"] = (
+    df[COL_INDICATOR].astype(str)
+    + " | "
+    + df[COL_RUN].astype(str)
+)
+
+
+# ============================================================
+# 5. PIVOT
+# ============================================================
+
+print("Construction de la matrice analytique...")
+
+pivot = df.pivot_table(
+    index=COL_GENERATION,
+    columns="_VARIABLE",
+    values=COL_VALUE,
+    aggfunc="sum"
+)
+
+print(
+    "Générations :", len(pivot),
+    "| Variables :", len(pivot.columns)
+)
+
+
+# ============================================================
+# 6. FONCTIONS UTILITAIRES
+# ============================================================
+
+def formula_string(variables, signs, target):
+    """
+    Construit une formule lisible.
+
+    Exemple :
+    A + B - C = D
+    """
+
+    expression = variables[0]
+
+    for i in range(1, len(variables)):
+        if signs[i - 1] == 1:
+            expression += " + " + variables[i]
+        else:
+            expression += " - " + variables[i]
+
+    return expression + " = " + target
+
+
+def evaluate_formula(
+    values,
+    variables,
+    signs,
+    target
+):
+    """
+    Calcule :
+
+    variable1 +/- variable2 +/- ... = target
+    """
+
+    result = values[variables[0]].copy()
+
+    for i in range(1, len(variables)):
+
+        if signs[i - 1] == 1:
+            result = result + values[variables[i]]
+        else:
+            result = result - values[variables[i]]
+
+    return result - values[target]
+
+
+def analyse_error(error, target):
+
+    abs_error = error.abs()
+
+    denominator = target.abs()
+
+    denominator = denominator.replace(
+        0,
+        np.nan
+    )
+
+    relative_error = (
+        abs_error / denominator
+    )
+
+    valid_relative = relative_error.replace(
+        [np.inf, -np.inf],
+        np.nan
+    ).dropna()
+
+    median_abs_error = (
+        abs_error.median()
+    )
+
+    mean_abs_error = (
+        abs_error.mean()
+    )
+
+    if len(valid_relative) > 0:
+        median_relative_error = (
+            valid_relative.median()
+        )
+    else:
+        median_relative_error = np.nan
+
+    return (
+        median_abs_error,
+        mean_abs_error,
+        median_relative_error
+    )
+
+
+# ============================================================
+# 7. RECHERCHE DES RELATIONS A 2 TERMES
+# ============================================================
+
+def search_two_terms(pivot):
+
+    variables = list(pivot.columns)
+
+    results = []
+
+    print(
+        "Recherche des relations à 2 termes..."
+    )
+
+    counter = 0
+
+    for a, b in itertools.combinations(
+        variables,
+        2
+    ):
+
+        common = pivot[
+            [a, b]
+        ].dropna()
+
+        if len(common) < MIN_OBSERVATIONS:
+            continue
+
+        # A + B = C
+        # Ici C doit être une autre variable
+
+        for target in variables:
+
+            if target in (a, b):
+                continue
+
+            data = pivot[
+                [a, b, target]
+            ].dropna()
+
+            if len(data) < MIN_OBSERVATIONS:
+                continue
+
+            for sign in [1, -1]:
+
+                error = (
+                    data[a]
+                    + sign * data[b]
+                    - data[target]
+                )
+
+                median_abs, mean_abs, median_rel = (
+                    analyse_error(
+                        error,
+                        data[target]
+                    )
+                )
+
+                tolerance = np.maximum(
+                    ABS_TOLERANCE,
+                    REL_TOLERANCE
+                    * data[target].abs()
+                )
+
+                coverage = (
+                    (error.abs() <= tolerance)
+                    .mean()
+                )
+
+                if coverage >= MIN_COVERAGE:
+
+                    if sign == 1:
+                        formula = (
+                            a + " + " + b
+                            + " = " + target
+                        )
+                    else:
+                        formula = (
+                            a + " - " + b
+                            + " = " + target
+                        )
+
+                    results.append({
+
+                        "Formule": formula,
+
+                        "Nb observations":
+                            len(data),
+
+                        "Couverture":
+                            coverage,
+
+                        "Erreur médiane":
+                            median_abs,
+
+                        "Erreur moyenne":
+                            mean_abs,
+
+                        "Erreur relative médiane":
+                            median_rel
+
+                    })
+
+        counter += 1
+
+        if counter % 100 == 0:
+            print(
+                "Variables analysées :",
+                counter
+            )
+
+    return results
+
+
+# ============================================================
+# 8. RECHERCHE DES RELATIONS A 3 TERMES
+# ============================================================
+
+def search_three_terms(pivot):
+
+    variables = list(pivot.columns)
+
+    results = []
+
+    print(
+        "Recherche des relations à 3 termes..."
+    )
+
+    counter = 0
+
+    # On sélectionne 3 variables explicatives
+    for a, b, c in itertools.combinations(
+        variables,
+        3
+    ):
+
+        for target in variables:
+
+            if target in (a, b, c):
+                continue
+
+            data = pivot[
+                [a, b, c, target]
+            ].dropna()
+
+            if len(data) < MIN_OBSERVATIONS:
+                continue
+
+            # Toutes les combinaisons de signes
+            for signs in itertools.product(
+                [1, -1],
+                repeat=2
+            ):
+
+                error = (
+                    data[a]
+                    + signs[0] * data[b]
+                    + signs[1] * data[c]
+                    - data[target]
+                )
+
+                median_abs, mean_abs, median_rel = (
+                    analyse_error(
+                        error,
+                        data[target]
+                    )
+                )
+
+                tolerance = np.maximum(
+                    ABS_TOLERANCE,
+                    REL_TOLERANCE
+                    * data[target].abs()
+                )
+
+                coverage = (
+                    (error.abs() <= tolerance)
+                    .mean()
+                )
+
+                if coverage >= MIN_COVERAGE:
+
+                    sign_b = (
+                        "+" if signs[0] == 1
+                        else "-"
+                    )
+
+                    sign_c = (
+                        "+" if signs[1] == 1
+                        else "-"
+                    )
+
+                    formula = (
+                        a + " "
+                        + sign_b + " "
+                        + b + " "
+                        + sign_c + " "
+                        + c + " = "
+                        + target
+                    )
+
+                    results.append({
+
+                        "Formule": formula,
+
+                        "Nb observations":
+                            len(data),
+
+                        "Couverture":
+                            coverage,
+
+                        "Erreur médiane":
+                            median_abs,
+
+                        "Erreur moyenne":
+                            mean_abs,
+
+                        "Erreur relative médiane":
+                            median_rel
+
+                    })
+
+        counter += 1
+
+        if counter % 100 == 0:
+            print(
+                "Combinaisons analysées :",
+                counter
+            )
+
+    return results
+
+
+# ============================================================
+# 9. EXECUTION
+# ============================================================
+
+all_results = []
+
+results_2 = search_two_terms(
+    pivot
+)
+
+all_results.extend(
+    results_2
+)
+
+
+if MAX_TERMS >= 3:
+
+    results_3 = search_three_terms(
+        pivot
+    )
+
+    all_results.extend(
+        results_3
+    )
+
+
+# ============================================================
+# 10. RESULTATS
+# ============================================================
+
+results_df = pd.DataFrame(
+    all_results
+)
+
+if len(results_df) == 0:
+
+    print(
+        "Aucune relation robuste trouvée."
+    )
+
+else:
+
+    results_df = results_df.sort_values(
+        by=[
+            "Couverture",
+            "Erreur relative médiane",
+            "Erreur médiane"
+        ],
+        ascending=[
+            False,
+            True,
+            True
+        ]
+    )
+
+    # Suppression des doublons
+    results_df = (
+        results_df
+        .drop_duplicates(
+            subset=["Formule"]
+        )
+    )
+
+    print("")
+    print(
+        "===================================="
+    )
+    print(
+        "RELATIONS DECOUVERTES :",
+        len(results_df)
+    )
+    print(
+        "===================================="
+    )
+
+    print(
+        results_df.head(50).to_string(
+            index=False
+        )
+    )
+
+
+# ============================================================
+# 11. EXPORT
+# ============================================================
+
+print("")
+print("Export des résultats...")
+
+with pd.ExcelWriter(
+    OUTPUT_FILE,
+    engine="openpyxl"
+) as writer:
+
+    results_df.to_excel(
+        writer,
+        sheet_name="Relations",
+        index=False
+    )
+
+    # Export de la matrice reconstruite
+    pivot.reset_index().to_excel(
+        writer,
+        sheet_name="Matrice",
+        index=False
+    )
+
+print("")
+print(
+    "Terminé."
+)
+
+print(
+    "Fichier :",
+    OUTPUT_FILE
+)
